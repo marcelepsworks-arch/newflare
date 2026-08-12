@@ -28,7 +28,9 @@ const server = http.createServer((req,res)=>{
     }
     const ext = path.extname(filePath).toLowerCase();
     const type = mime[ext] || 'application/octet-stream';
-    res.writeHead(200, {'Content-Type': type});
+    // ES modules are cached aggressively; during development a stale module graph looks
+    // exactly like "the app is broken", so never let the browser reuse one.
+    res.writeHead(200, {'Content-Type': type, 'Cache-Control': 'no-store, must-revalidate'});
     const stream = fs.createReadStream(filePath);
     stream.pipe(res);
   });
