@@ -3,6 +3,7 @@ import ParticlesGPGPU from './ParticlesGPGPU.js';
 import ShardsLayer from './ShardsLayer.js';
 import RaymarchLayer from './RaymarchLayer.js';
 import PostFX from './PostFX.js';
+import BackgroundLayer from './BackgroundLayer.js';
 import PresetManager, { PALETTES, SHAPES } from './Presets.js';
 import Director, { SHOTS } from './Director.js';
 import { GUI } from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18.0/dist/lil-gui.esm.min.js';
@@ -43,6 +44,7 @@ export default class Renderer {
       this.raymarch = new RaymarchLayer(this.renderer, 0.5);
     }
 
+    this.background = new BackgroundLayer();
     this.postfx = new PostFX(this.renderer);
 
     // live palette + camera state must exist before PresetManager applies its first preset
@@ -147,6 +149,7 @@ export default class Renderer {
     if(this.shards) this.shards.setParams(Object.assign({}, p, { palette: this._palette }));
     if(this.raymarch) this.raymarch.setShape(Object.assign({}, p, { palette: this._palette }));
     this.postfx.setParams(p);
+    this.background.setParams(p);
     this._shotTarget.dist = p.camDist;
     this._shotTarget.spin = p.camSpin;
     this._shotTarget.bob = p.camBob;
@@ -177,6 +180,7 @@ export default class Renderer {
     this.particlesSystem.setParams({ palette: live });
     if(this.shards) this.shards.setPalette(live);
     if(this.raymarch) this.raymarch.setPalette(live);
+    this.background.setPalette(live);
   }
 
   // Replace whichever shape slot the morph is currently *not* showing, so a new form
@@ -314,6 +318,7 @@ export default class Renderer {
     this._bass += (bass - this._bass) * 0.2;
     // beatPulse spikes on the beat and decays, so anything riding it lands with the music
     this._pulse = (features && features.beatPulse) || 0;
+    this._tilt = (features && features.spectralTilt) || 0;
     this._beatPhase = (features && features.beatPhase) || 0;
 
     this.particlesSystem.step(time, dt, bands);
@@ -371,13 +376,12 @@ export default class Renderer {
     this.camera.lookAt(this._look);
     this.camera.updateMatrixWorld();
 
+    // animated backdrop fills the frame and clears the target for everything after it
+    this.background.render(r, this.postfx.sceneRT, time, this._energy, this._pulse, this._tilt || 0);
+
     if(this.raymarch){
-      // solid procedural body first: it owns the background, no depth involved
+      // solid procedural body composites on top, contributing real depth
       this.raymarch.render(r, this.camera, time, this._energy, this.postfx.sceneRT);
-    } else {
-      r.setRenderTarget(this.postfx.sceneRT);
-      r.setClearColor(0x000000, 1);
-      r.clear(true, true, false);
     }
 
     // geometry + particles on top; the raymarch pass left real depth behind, so the solid

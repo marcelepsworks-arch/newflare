@@ -13,12 +13,12 @@ const SHAPE_POOLS = {
 // Camera setups. Changing the shot is what stops a scene from reading as one long
 // static orbit — the same geometry looks like a different piece from a new angle.
 export const SHOTS = [
-  { dist: 520, height:   40, spin:  0.05, bob: 20 },
-  { dist: 300, height:  110, spin: -0.14, bob: 10 },
+  { dist: 470, height:   40, spin:  0.05, bob: 20 },
+  { dist: 380, height:  110, spin: -0.14, bob: 10 },
   { dist: 700, height:  -70, spin:  0.03, bob: 35 },
-  { dist: 430, height:  230, spin:  0.10, bob:  6 },
-  { dist: 250, height:    0, spin:  0.22, bob: 14 },
-  { dist: 600, height:  120, spin: -0.07, bob: 28 }
+  { dist: 520, height:  230, spin:  0.10, bob:  6 },
+  { dist: 340, height:    0, spin:  0.22, bob: 14 },
+  { dist: 620, height:  120, spin: -0.07, bob: 28 }
 ];
 
 // Everything is scheduled in beats, so changes land with the music instead of on a

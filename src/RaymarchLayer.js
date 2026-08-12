@@ -116,7 +116,9 @@ export default class RaymarchLayer {
           vec3 glowCol = cosPalette(uTime * 0.02 + 0.15, uPalA, uPalB, uPalC, uPalD);
           col += glowCol * min(glow, 0.7) * 0.22 * uGlow * (0.4 + uEnergy * 0.8);
 
-          gl_FragColor = vec4(col * uOpacity, 1.0);
+          // alpha lets the animated background show through wherever the body is not
+          float alpha = hit > 0.0 ? 1.0 : clamp(min(glow, 0.7) * 1.4, 0.0, 1.0);
+          gl_FragColor = vec4(col * uOpacity, alpha * uOpacity);
         }`,
       depthWrite: true,
       depthTest: false
@@ -136,10 +138,12 @@ export default class RaymarchLayer {
       fragmentShader: `precision highp float;
         varying vec2 vUv; uniform sampler2D uColor; uniform sampler2D uDepth;
         void main(){
-          gl_FragColor = vec4(texture2D(uColor, vUv).rgb, 1.0);
+          vec4 c = texture2D(uColor, vUv);
+          if(c.a <= 0.001) discard;   // leave the background untouched where nothing was hit
+          gl_FragColor = c;
           gl_FragDepth = texture2D(uDepth, vUv).r;
         }`,
-      depthWrite: true, depthTest: false
+      transparent: true, depthWrite: true, depthTest: false
     });
     this.blitQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.blitMat);
     this.blitQuad.frustumCulled = false;
@@ -205,7 +209,7 @@ export default class RaymarchLayer {
     u.uResolution.value.set(this.rt.width, this.rt.height);
 
     renderer.setRenderTarget(this.rt);
-    renderer.setClearColor(0x000000, 1);
+    renderer.setClearColor(0x000000, 0);
     renderer.clear(true, true, false);
     renderer.render(this.scene, this.camera);
 
@@ -213,7 +217,6 @@ export default class RaymarchLayer {
     this.blitMat.uniforms.uColor.value = this.rt.texture;
     this.blitMat.uniforms.uDepth.value = this.rt.depthTexture;
     renderer.setRenderTarget(target);
-    renderer.clear(true, true, false);
     renderer.render(this.blitScene, this.camera);
   }
 }
