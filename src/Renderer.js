@@ -1,6 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
 import ParticlesGPGPU from './ParticlesGPGPU.js';
 import PresetManager from './Presets.js';
+import { GUI } from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18.0/dist/lil-gui.esm.min.js';
 
 export default class Renderer {
   constructor(canvas){
@@ -49,6 +50,41 @@ export default class Renderer {
     this.overlayScene.add(this.overlayQuad);
 
     window.addEventListener('resize', ()=>this.onResize());
+
+    // Setup GUI controls
+    try{
+      this.gui = new GUI({ width: 320 });
+      const sys = this.particlesSystem;
+      const pm = this.presetManager;
+      const state = {
+        preset: pm.presets[0].name,
+        nextPreset: ()=> pm.next(0.6),
+        autoOnset: true,
+        noiseScale: sys.noiseScale,
+        curl: sys.curl,
+        damping: sys.damping,
+        pointSize: sys.particleMat.uniforms.uPointSize.value,
+        color: '#' + sys.particleMat.uniforms.uColor.value.getHexString(),
+        trailDecay: this.particlesSystem.trailCompositeMat.uniforms.uDecay.value
+      };
+
+      const pFolder = this.gui.addFolder('Presets');
+      pFolder.add(state, 'preset', pm.presets.map(p=>p.name)).name('Select').onChange((v)=>{ pm.select(v, 0.6); });
+      pFolder.add(state, 'nextPreset').name('Next Preset');
+      pFolder.add(state, 'autoOnset').name('Auto Onset');
+      pFolder.open();
+
+      const pSys = this.gui.addFolder('Particles');
+      pSys.add(state, 'noiseScale', 0.0001, 0.01, 0.0001).name('Noise Scale').onChange(v=> sys.setParams({ noiseScale:v }));
+      pSys.add(state, 'curl', 0.1, 6.0, 0.01).name('Curl').onChange(v=> sys.setParams({ curl:v }));
+      pSys.add(state, 'damping', 0.8, 0.999, 0.001).name('Damping').onChange(v=> sys.setParams({ damping:v }));
+      pSys.add(state, 'pointSize', 0.5, 8.0, 0.1).name('Point Size').onChange(v=> sys.setParams({ pointSize:v }));
+      pSys.addColor(state, 'color').name('Color').onChange(v=> sys.setParams({ color: parseInt(v.replace('#',''),16) }));
+      pSys.add(state, 'trailDecay', 0.7, 0.999, 0.001).name('Trail Decay').onChange(v=> sys.setParams({ trailDecay:v }));
+      pSys.open();
+
+      this._guiState = state;
+    }catch(e){ console.warn('GUI init failed', e); }
   }
 
   onResize(){
