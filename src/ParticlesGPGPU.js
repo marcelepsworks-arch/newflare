@@ -83,6 +83,7 @@ export default class ParticlesGPGPU {
       uniforms: {
         uPos: { value: null },
         uVel: { value: null },
+        uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) },
         uTime: { value: 0 },
         uDelta: { value: 0.016 },
         uNoiseScale: { value: this.noiseScale },
@@ -96,7 +97,7 @@ export default class ParticlesGPGPU {
       vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
       fragmentShader: `precision highp float;
       // 3D Simplex noise (Ashima) - compact version
-      uniform sampler2D uPos; uniform sampler2D uVel; uniform float uTime; uniform float uDelta; uniform float uNoiseScale; uniform float uCurl; uniform float uDamping; uniform float uBands[6]; uniform float uModeBlend; uniform vec3 uAttractor; uniform float uExplode;
+      uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uTime; uniform float uDelta; uniform float uNoiseScale; uniform float uCurl; uniform float uDamping; uniform float uBands[6]; uniform float uModeBlend; uniform vec3 uAttractor; uniform float uExplode;
       vec4 mod289(vec4 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
       vec3 mod289(vec3 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
       vec4 permute(vec4 x){ return mod289(((x*34.0)+1.0)*x); }
@@ -153,7 +154,7 @@ export default class ParticlesGPGPU {
         return normalize(vec3(b - a, c - b, a - c));
       }
       void main(){
-        vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPos,0));
+        vec2 uv = gl_FragCoord.xy / uTexSize;
         vec4 p = texture2D(uPos, uv);
         vec4 v = texture2D(uVel, uv);
         vec3 pos = p.xyz;
@@ -183,10 +184,10 @@ export default class ParticlesGPGPU {
       uniforms: {
         uPos: { value: null },
         uVel: { value: null },
-        uDelta: { value: 0.016 }
+        uDelta: { value: 0.016 }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
       vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPos,0)); vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
+      fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
     });
 
     this.quad = new THREE.Mesh(quadGeo, this.velMat);
@@ -240,10 +241,10 @@ export default class ParticlesGPGPU {
     // composite shader: fade previous trail and add current frame
     this.trailCompositeMat = new THREE.ShaderMaterial({
       uniforms: {
-        uPrev: { value: null }, uCurr: { value: null }, uDecay: { value: 0.96 }
+        uPrev: { value: null }, uCurr: { value: null }, uDecay: { value: 0.96 }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
       vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPrev,0)); vec4 prev = texture2D(uPrev, uv) * uDecay; vec4 cur = texture2D(uCurr, uv); // additive blend
+      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; uniform vec2 uTexSize; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 prev = texture2D(uPrev, uv) * uDecay; vec4 cur = texture2D(uCurr, uv); // additive blend
         vec4 outc = prev + cur; outc = clamp(outc, 0.0, 1.0); gl_FragColor = outc; }`,
       depthWrite: false
     });
