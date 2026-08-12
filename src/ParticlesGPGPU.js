@@ -72,7 +72,7 @@ export default class ParticlesGPGPU {
     const copyMat = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture(uTexture, vUv); gl_FragColor = c; }`,
+      fragmentShader: `varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = c; }`,
       depthWrite: false
     });
     this.copyMesh = new THREE.Mesh(quadGeo, copyMat);
@@ -154,8 +154,8 @@ export default class ParticlesGPGPU {
       }
       void main(){
         vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPos,0));
-        vec4 p = texture(uPos, uv);
-        vec4 v = texture(uVel, uv);
+        vec4 p = texture2D(uPos, uv);
+        vec4 v = texture2D(uVel, uv);
         vec3 pos = p.xyz;
         vec3 vel = v.xyz;
         vec3 n = curlNoise(pos * uNoiseScale + vec3(uTime*0.1));
@@ -186,7 +186,7 @@ export default class ParticlesGPGPU {
         uDelta: { value: 0.016 }
       },
       vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPos,0)); vec4 p = texture(uPos, uv); vec4 v = texture(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
+      fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPos,0)); vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
     });
 
     this.quad = new THREE.Mesh(quadGeo, this.velMat);
@@ -243,7 +243,7 @@ export default class ParticlesGPGPU {
         uPrev: { value: null }, uCurr: { value: null }, uDecay: { value: 0.96 }
       },
       vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPrev,0)); vec4 prev = texture(uPrev, uv) * uDecay; vec4 cur = texture(uCurr, uv); // additive blend
+      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPrev,0)); vec4 prev = texture2D(uPrev, uv) * uDecay; vec4 cur = texture2D(uCurr, uv); // additive blend
         vec4 outc = prev + cur; outc = clamp(outc, 0.0, 1.0); gl_FragColor = outc; }`,
       depthWrite: false
     });
