@@ -71,8 +71,8 @@ export default class ParticlesGPGPU {
     // copy material to initialize RTs
     const copyMat = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null } },
-      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `uniform sampler2D uTexture; void main(){ vec4 c = texture(uTexture, uv); gl_FragColor = c; }`,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture(uTexture, vUv); gl_FragColor = c; }`,
       depthWrite: false
     });
     this.copyMesh = new THREE.Mesh(quadGeo, copyMat);
