@@ -29,18 +29,34 @@ export default class PostFX {
       uniforms: {
         uScene: { value: null }, uPrev: { value: null },
         uDecay: { value: 0.9 }, uZoom: { value: 1.002 }, uRotate: { value: 0.0 },
-        uAspect: { value: this.width / this.height }
+        uAspect: { value: this.width / this.height },
+        uZoomRad: { value: 0.004 }, uRotRad: { value: 0.0025 },
+        uWarp: { value: 0.6 }, uTime: { value: 0 }
       },
       vertexShader: QUAD_VS,
       fragmentShader: `precision highp float;
         varying vec2 vUv;
         uniform sampler2D uScene; uniform sampler2D uPrev;
         uniform float uDecay, uZoom, uRotate, uAspect;
+        uniform float uZoomRad, uRotRad, uWarp, uTime;
         void main(){
+          // Warp field in the spirit of Milkdrop's per-vertex mesh: zoom and rotation vary
+          // with radius, plus a slow angular ripple. A single global zoom reads as a hard
+          // mechanical push; letting it vary across the frame makes the feedback organic.
           vec2 c = vUv - 0.5;
           c.x *= uAspect;
-          float s = sin(uRotate), co = cos(uRotate);
-          c = mat2(co, -s, s, co) * c / uZoom;
+          float rad = length(c);
+          float ang = atan(c.y, c.x);
+
+          float zoom = uZoom + uZoomRad * rad;
+          float rot = uRotate + uRotRad * rad;
+          vec2 ripple = vec2(
+            sin(ang * 3.0 + uTime * 0.31) + sin(rad * 8.0 - uTime * 0.22),
+            cos(ang * 2.0 - uTime * 0.27) + cos(rad * 6.0 + uTime * 0.19)
+          ) * uWarp * 0.0022 * (0.30 + rad);
+
+          float s = sin(rot), co = cos(rot);
+          c = mat2(co, -s, s, co) * c / zoom + ripple;
           c.x /= uAspect;
           vec2 warped = c + 0.5;
           vec3 prev = texture2D(uPrev, warped).rgb * uDecay;
@@ -227,6 +243,7 @@ export default class PostFX {
     if(typeof p.trailDecay !== 'undefined') fb.uDecay.value = p.trailDecay;
     if(typeof p.feedbackZoom !== 'undefined') fb.uZoom.value = p.feedbackZoom;
     if(typeof p.feedbackRotate !== 'undefined') fb.uRotate.value = p.feedbackRotate;
+    if(typeof p.warp !== 'undefined') fb.uWarp.value = p.warp;
     if(typeof p.bloom !== 'undefined') co.uBloomStrength.value = p.bloom;
     if(typeof p.streak !== 'undefined') co.uStreak.value = p.streak;
     if(typeof p.rays !== 'undefined') co.uRayStrength.value = p.rays;
@@ -251,6 +268,7 @@ export default class PostFX {
 
   // sceneRT already holds the rendered frame; produces the final image on screen
   present(time){
+    this.feedbackMat.uniforms.uTime.value = time || 0;
     this._pass(this.feedbackMat, this.feedbackB, { uScene: this.sceneRT.texture, uPrev: this.feedbackA.texture });
     const swap = this.feedbackA; this.feedbackA = this.feedbackB; this.feedbackB = swap;
     const lit = this.feedbackA.texture;

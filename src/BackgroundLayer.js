@@ -44,21 +44,25 @@ export default class BackgroundLayer {
               cos(t * (0.5 + f * 0.27) + f * 1.3)
             ) * (0.34 + f * 0.06);
             float d = length(p - c);
-            float w = exp(-d * d * (5.0 - f * 1.1));
+            float w = exp(-d * d * (9.0 - f * 1.6));
             col += cosPalette(f * 0.21 + t * 0.9 + uTilt * 0.15, uPalA, uPalB, uPalC, uPalD) * w;
           }
 
           // nebula texture so the gradient has structure instead of reading as a blur
           float n = fbm3(vec3(p * 2.3, uTime * 0.04));
-          col *= 0.45 + 0.85 * (n * 0.5 + 0.5);
+          col *= 0.35 + 0.75 * (n * 0.5 + 0.5);
 
-          // horizon-style vertical grade underneath everything
-          col += cosPalette(0.6 + t * 0.5, uPalA, uPalB, uPalC, uPalD) * (0.10 + 0.10 * (1.0 - vUv.y));
+          // faint horizon grade, kept low so it never lifts the whole frame
+          col += cosPalette(0.6 + t * 0.5, uPalA, uPalB, uPalC, uPalD) * 0.05 * (1.0 - vUv.y);
 
-          col *= uIntensity * (0.65 + uEnergy * 0.5 + uPulse * 0.25);
+          col *= uIntensity * (0.55 + uEnergy * 0.55 + uPulse * 0.3);
+
+          // Squaring pulls the midtones down and leaves only the field centres glowing:
+          // light pooling out of darkness, rather than an evenly lit backdrop that washes
+          // out the subject in front of it.
+          col = col * col * 2.2;
           col = pow(max(col, 0.0), vec3(uContrast));
-          // keep it well below the subject so the geometry still reads as the subject
-          gl_FragColor = vec4(min(col, vec3(0.55)), 1.0);
+          gl_FragColor = vec4(min(col, vec3(0.38)), 1.0);
         }`,
       depthWrite: false,
       depthTest: false

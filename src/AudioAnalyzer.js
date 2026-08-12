@@ -18,10 +18,18 @@ export default class AudioAnalyzer {
     this.bands = [ [20,60],[60,250],[250,500],[500,2000],[2000,4000],[4000,20000] ];
     this.smoothed = new Array(this.bands.length).fill(0);
     this.smoothing = 0.85;
-    // per-band running peak, so a quiet mix drives the visuals as hard as a loud one
-    this.bandPeak = new Array(this.bands.length).fill(0.05);
-    this.peakDecay = 0.9995;
-    this.peakFloor = 0.04;
+    // Loudness model adapted from projectM's Loudness.cpp (algorithm reimplemented, no
+    // code copied). Per band it keeps a fast-attack/slow-decay average and a long-running
+    // average used as the normaliser, so 1.0 means "normal for this track" and anything
+    // above ~1.3 is a genuine spike. It self-calibrates instead of chasing a peak.
+    const n = this.bands.length;
+    this.bandCurrent = new Array(n).fill(0);
+    this.bandAvg = new Array(n).fill(0);
+    this.bandLong = new Array(n).fill(0);
+    this.bandRel = new Array(n).fill(1);
+    this.bandAtt = new Array(n).fill(1);
+    this._loudFrames = 0;
+    this._prevTime = null;
 
     // descriptors of musical *texture* rather than level: how many things are sounding,
     // how tonal or noisy they are, and how often events arrive
@@ -65,20 +73,39 @@ export default class AudioAnalyzer {
     const mags = new Float32Array(this.freqData.length);
     for(let i=0;i<this.freqData.length;i++) mags[i] = Math.max(0, (this.freqData[i]+140)/140);
 
-    // compute band averages with smoothing
+    // Frame-rate normalised decay: without this the smoothing is much faster at 144 Hz
+    // than at 60 Hz, so the same track reacts differently on different machines.
+    const nowT = this.audioContext.currentTime;
+    const frameDt = this._prevTime === null ? 1/60 : Math.min(0.1, Math.max(1e-4, nowT - this._prevTime));
+    this._prevTime = nowT;
+    const rateFor = (r) => Math.pow(r, 30 * frameDt);
+    this._loudFrames++;
+
     const bandVals = [];
     for(let b=0;b<this.bands.length;b++){
       const [f0,f1] = this.bands[b];
       const i0 = Math.max(0, this._getFreqIndex(f0));
       const i1 = Math.min(this.freqData.length-1, this._getFreqIndex(f1));
-      let s=0; let n=0;
-      for(let i=i0;i<=i1;i++){ s+=mags[i]; n++; }
-      const avg = n? s/n : 0;
-      // exponential smoothing per-band
-      this.smoothed[b] = this.smoothing * this.smoothed[b] + (1-this.smoothing) * avg;
-      // adaptive gain: track the recent peak and report the band relative to it
-      this.bandPeak[b] = Math.max(this.bandPeak[b] * this.peakDecay, this.smoothed[b], this.peakFloor);
-      bandVals.push(Math.min(1, this.smoothed[b] / this.bandPeak[b]));
+      let acc=0; let cnt=0;
+      for(let i=i0;i<=i1;i++){ acc+=mags[i]; cnt++; }
+      const cur = cnt ? acc/cnt : 0;
+      this.bandCurrent[b] = cur;
+
+      // fast attack, slow release: transients read as transients
+      const rate = rateFor(cur > this.bandAvg[b] ? 0.2 : 0.5);
+      this.bandAvg[b] = this.bandAvg[b] * rate + cur * (1 - rate);
+
+      // long-term reference the relative values are measured against
+      const longRate = rateFor(this._loudFrames < 50 ? 0.9 : 0.992);
+      this.bandLong[b] = this.bandLong[b] * longRate + cur * (1 - longRate);
+
+      const ref = this.bandLong[b];
+      this.bandRel[b] = ref > 0.001 ? cur / ref : 1.0;
+      this.bandAtt[b] = ref > 0.001 ? this.bandAvg[b] / ref : 1.0;
+      this.smoothed[b] = this.bandAvg[b];
+
+      // 0..1 for the shaders: 0.75x the track's own norm reads as silence, 1.6x as a hit
+      bandVals.push(Math.max(0, Math.min(1, (this.bandAtt[b] - 0.75) / 0.85)));
     }
 
     // spectral flux (sum of positive differences)
@@ -195,7 +222,10 @@ export default class AudioAnalyzer {
       density: this.density,
       crest: Math.max(0, this.crest),
       complexity: this.complexity,
-      presence
+      presence,
+      // projectM-style relative loudness: 1.0 = normal for this track, >1.3 = spike
+      bandRel: this.bandRel,
+      bandAtt: this.bandAtt
     }, beat);
   }
 

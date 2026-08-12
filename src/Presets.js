@@ -1,13 +1,17 @@
 // Cosine palettes: color(t) = a + b * cos(2*PI*(c*t + d))
 export const PALETTES = {
-  Spectrum: { a:[0.50,0.50,0.50], b:[0.50,0.50,0.50], c:[1.00,1.00,1.00], d:[0.00,0.33,0.67] },
-  Neon:     { a:[0.60,0.40,0.55], b:[0.45,0.45,0.45], c:[1.00,1.00,0.60], d:[0.85,0.95,0.30] },
-  Gold:     { a:[0.55,0.45,0.32], b:[0.45,0.38,0.28], c:[1.00,0.70,0.40], d:[0.00,0.15,0.20] },
-  Ocean:    { a:[0.10,0.42,0.55], b:[0.35,0.35,0.45], c:[0.90,1.00,1.00], d:[0.10,0.20,0.35] },
-  Electro:  { a:[0.75,0.45,0.45], b:[0.30,0.40,0.30], c:[2.00,1.00,1.00], d:[0.00,0.25,0.25] },
-  Aurora:   { a:[0.25,0.50,0.42], b:[0.45,0.40,0.50], c:[1.00,1.00,0.80], d:[0.30,0.20,0.55] },
-  Ember:    { a:[0.55,0.30,0.22], b:[0.45,0.30,0.20], c:[1.00,1.00,1.00], d:[0.00,0.10,0.20] },
-  Ultra:    { a:[0.45,0.35,0.60], b:[0.45,0.35,0.45], c:[1.00,0.80,1.20], d:[0.60,0.40,0.20] }
+  // Narrow, analogous palettes. The previous set used c=[1,1,1], which sweeps the whole
+  // hue circle and put every colour on screen at once. Small c values keep the hues close
+  // together and let *luminance* do the work, so the image reads as light on dark rather
+  // than as a rainbow. b controls the dark-to-light throw.
+  Ink:     { a:[0.20,0.24,0.32], b:[0.28,0.30,0.34], c:[0.22,0.22,0.22], d:[0.55,0.62,0.70] },
+  Ember:   { a:[0.28,0.20,0.16], b:[0.34,0.26,0.18], c:[0.20,0.20,0.20], d:[0.02,0.10,0.18] },
+  Verdant: { a:[0.18,0.28,0.24], b:[0.24,0.32,0.26], c:[0.18,0.18,0.18], d:[0.30,0.40,0.34] },
+  Bloom:   { a:[0.30,0.22,0.28], b:[0.32,0.24,0.32], c:[0.24,0.24,0.24], d:[0.80,0.88,0.95] },
+  Tide:    { a:[0.16,0.26,0.34], b:[0.22,0.30,0.36], c:[0.16,0.16,0.16], d:[0.48,0.56,0.64] },
+  Solar:   { a:[0.32,0.27,0.18], b:[0.34,0.30,0.20], c:[0.20,0.20,0.20], d:[0.10,0.18,0.26] },
+  Violet:  { a:[0.24,0.20,0.34], b:[0.28,0.24,0.36], c:[0.22,0.22,0.22], d:[0.66,0.74,0.86] },
+  Ash:     { a:[0.26,0.27,0.29], b:[0.30,0.30,0.31], c:[0.12,0.12,0.12], d:[0.20,0.26,0.32] }
 };
 
 // Shape ids match sdShape() in ShaderChunks.js
@@ -25,12 +29,12 @@ const NUMERIC_KEYS = [
   'trailDecay','feedbackZoom','feedbackRotate','bloom','exposure','chroma','vignette',
   'camDist','camSpin','camBob',
   'liquid','metal','irid','streak','rays','ghosts','grain',
-  'bgIntensity','bgContrast'
+  'bgIntensity','bgContrast','bandBulge','bandHueSpread','warp'
 ];
 const SNAP_KEYS = ['shapeA','shapeB','shardShape'];
 
 const DEFAULTS = {
-  palette: 'Spectrum',
+  palette: 'Ink',
   shapeA: SHAPES.sphere, shapeB: SHAPES.torus, shapeMix: 0.0,
   shapeScale:186, shapeWarp: 0.0, shapeSpin: 0.12, audioDeform: 0.35,
   shapeAttract: 0.5, swirl: 0.5,
@@ -42,107 +46,108 @@ const DEFAULTS = {
   bloom: 0.9, exposure: 1.15, chroma: 0.0018, vignette: 0.35,
   camDist:346, camSpin: 0.05, camBob: 18,
   liquid: 0.0, metal: 0.6, irid: 0.5,
-  bgIntensity: 0.55, bgContrast: 1.0,
+  bgIntensity: 0.42, bgContrast: 1.25,
+  bandBulge: 0.22, bandHueSpread: 0.16, warp: 0.6,
   streak: 0.30, rays: 0.18, ghosts: 0.12, grain: 0.045
 };
 
 // Each preset is a different *kind* of animation, not just a recolour: some are dominated
 // by the solid raymarched body, some by flying polyhedra, some by the particle veil.
 const PRESET_LIST = [
-  { name:'Monolith', bgIntensity:0.51, bgContrast:0.91, palette:'Ultra', shapeA:SHAPES.box, shapeB:SHAPES.octaStar, shapeMix:0.15,
+  { name:'Monolith', bgIntensity:0.38, bgContrast:0.91, palette:'Violet', shapeA:SHAPES.box, shapeB:SHAPES.octaStar, shapeMix:0.15,
     shapeScale:202, shapeSpin:0.10, audioDeform:0.5, shapeAttract:0.75, swirl:0.77,
     raymarchOpacity:1.0, glow:0.8, shardShape:'box', shardScale:2.9, shardCount:558,
     particleCount:2640, pointSize:1.6, particleOpacity:0.45, trailDecay:0.82, bloom:0.8, camDist:485 },
 
-  { name:'Toroid', bgIntensity:0.68, bgContrast:0.85, palette:'Neon', shapeA:SHAPES.torus, shapeB:SHAPES.helix, shapeMix:0.0,
+  { name:'Toroid', bgIntensity:0.51, bgContrast:0.85, palette:'Bloom', shapeA:SHAPES.torus, shapeB:SHAPES.helix, shapeMix:0.0,
     shapeScale:209, shapeSpin:0.28, audioDeform:0.3, shapeAttract:0.9, swirl:3.00,
     raymarchOpacity:0.85, glow:1.1, shardShape:'blade', shardScale:2.2, shardCount:1612,
     particleCount:5720, pointSize:1.4, particleOpacity:0.7, trailDecay:0.9, feedbackRotate:0.004,
     bloom:1.1, camDist:502, camSpin:0.12 },
 
-  { name:'Gyroid', bgIntensity:0.62, bgContrast:1.06, palette:'Aurora', shapeA:SHAPES.gyroid, shapeB:SHAPES.sphere, shapeMix:0.1,
+  { name:'Gyroid', bgIntensity:0.46, bgContrast:1.06, palette:'Verdant', shapeA:SHAPES.gyroid, shapeB:SHAPES.sphere, shapeMix:0.1,
     shapeScale:232, shapeSpin:0.06, shapeWarp:0.25, audioDeform:0.6, shapeAttract:0.95, swirl:1.98,
     raymarchOpacity:1.0, glow:0.9, shardShape:'tetra', shardScale:1.7, shardCount:1860,
     particleCount:3960, pointSize:1.2, particleOpacity:0.5, trailDecay:0.86, bloom:1.0, camDist:557 },
 
-  { name:'Bloom', bgIntensity:0.38, bgContrast:1.16, palette:'Ember', shapeA:SHAPES.bloom, shapeB:SHAPES.ripple, shapeMix:0.25,
+  { name:'Bloom', bgIntensity:0.29, bgContrast:1.16, palette:'Ember', shapeA:SHAPES.bloom, shapeB:SHAPES.ripple, shapeMix:0.25,
     shapeScale:194, shapeSpin:0.18, audioDeform:0.75, shapeAttract:0.8, swirl:2.42,
     raymarchOpacity:0.95, glow:1.3, shardShape:'octa', shardScale:2.4, shardCount:992,
     particleCount:4840, pointSize:2.0, particleOpacity:0.65, trailDecay:0.9, bloom:1.3,
     chroma:0.003, camDist:466 },
 
-  { name:'Shatter', bgIntensity:0.37, bgContrast:1.1, palette:'Electro', shapeA:SHAPES.octaStar, shapeB:SHAPES.box, shapeMix:0.5,
+  { name:'Shatter', bgIntensity:0.28, bgContrast:1.1, palette:'Violet', shapeA:SHAPES.octaStar, shapeB:SHAPES.box, shapeMix:0.5,
     shapeScale:178, shapeSpin:0.35, audioDeform:0.9, shapeAttract:0.25, swirl:0.88,
     curl:2.6, damping:0.965, raymarchOpacity:0.5, glow:0.7,
     shardShape:'tetra', shardScale:3.6, shardCount:1860, particleCount:3080,
     pointSize:2.4, particleOpacity:0.6, trailDecay:0.78, bloom:1.2, chroma:0.004, camDist:427 },
 
-  { name:'Helix', bgIntensity:0.38, bgContrast:0.86, palette:'Ocean', shapeA:SHAPES.helix, shapeB:SHAPES.torus, shapeMix:0.2,
+  { name:'Helix', bgIntensity:0.29, bgContrast:0.86, palette:'Tide', shapeA:SHAPES.helix, shapeB:SHAPES.torus, shapeMix:0.2,
     shapeScale:217, shapeSpin:0.4, audioDeform:0.35, shapeAttract:0.95, swirl:3.00,
     raymarchOpacity:0.8, glow:1.0, shardShape:'blade', shardScale:1.9, shardCount:1488,
     particleCount:5280, pointSize:1.3, particleOpacity:0.7, trailDecay:0.92,
     feedbackZoom:1.004, bloom:1.0, camDist:521, camSpin:0.18 },
 
-  { name:'Ripple', bgIntensity:0.56, bgContrast:1.38, palette:'Gold', shapeA:SHAPES.ripple, shapeB:SHAPES.sphere, shapeMix:0.35,
+  { name:'Ripple', bgIntensity:0.42, bgContrast:1.38, palette:'Solar', shapeA:SHAPES.ripple, shapeB:SHAPES.sphere, shapeMix:0.35,
     shapeScale:225, shapeSpin:0.05, shapeWarp:0.15, audioDeform:0.85, shapeAttract:0.9, swirl:1.54,
     raymarchOpacity:1.0, glow:1.2, shardShape:'icosa', shardScale:1.6, shardCount:744,
     particleCount:4400, pointSize:1.5, particleOpacity:0.55, trailDecay:0.93,
     feedbackZoom:1.006, bloom:1.1, vignette:0.45, camDist:540 },
 
-  { name:'Swarm', bgIntensity:0.41, bgContrast:0.96, palette:'Spectrum', shapeA:SHAPES.sphere, shapeB:SHAPES.gyroid, shapeMix:0.6,
+  { name:'Swarm', bgIntensity:0.31, bgContrast:0.96, palette:'Ink', shapeA:SHAPES.sphere, shapeB:SHAPES.gyroid, shapeMix:0.6,
     shapeScale:248, shapeSpin:0.08, audioDeform:0.4, shapeAttract:0.15, swirl:0.66,
     curl:2.2, noiseScale:0.004, damping:0.99, raymarchOpacity:0.35, glow:0.6,
     shardShape:'icosa', shardScale:1.4, shardCount:1364, particleCount:7209,
     pointSize:1.8, particleOpacity:0.85, trailDecay:0.94, bloom:1.0, camDist:595 },
 
-  { name:'Vault', bgIntensity:0.66, bgContrast:1.46, palette:'Ultra', shapeA:SHAPES.box, shapeB:SHAPES.gyroid, shapeMix:0.4,
+  { name:'Vault', bgIntensity:0.49, bgContrast:1.46, palette:'Violet', shapeA:SHAPES.box, shapeB:SHAPES.gyroid, shapeMix:0.4,
     shapeScale:264, shapeSpin:0.03, shapeWarp:0.3, audioDeform:0.5, shapeAttract:0.85, swirl:1.10,
     raymarchOpacity:1.0, glow:0.75, shardShape:'box', shardScale:2.2, shardCount:868,
     particleCount:3520, pointSize:1.4, particleOpacity:0.5, trailDecay:0.85,
     feedbackZoom:0.997, bloom:0.85, exposure:1.02, camDist:634 },
 
-  { name:'Pulsar', bgIntensity:0.64, bgContrast:1.08, palette:'Neon', shapeA:SHAPES.sphere, shapeB:SHAPES.bloom, shapeMix:0.5,
+  { name:'Pulsar', bgIntensity:0.48, bgContrast:1.08, palette:'Bloom', shapeA:SHAPES.sphere, shapeB:SHAPES.bloom, shapeMix:0.5,
     shapeScale:170, shapeSpin:0.22, audioDeform:1.1, shapeAttract:0.6, swirl:3.00,
     raymarchOpacity:0.9, glow:1.4, shardShape:'octa', shardScale:2.6, shardCount:1240,
     particleCount:4400, pointSize:2.2, particleOpacity:0.75, trailDecay:0.9,
     feedbackRotate:-0.005, bloom:1.35, chroma:0.0035, camDist:408, camSpin:0.1 },
 
-  { name:'Mercury', bgIntensity:0.84, bgContrast:0.83, palette:'Ultra', shapeA:SHAPES.meta, shapeB:SHAPES.organic, shapeMix:0.4,
+  { name:'Mercury', bgIntensity:0.63, bgContrast:0.83, palette:'Violet', shapeA:SHAPES.meta, shapeB:SHAPES.organic, shapeMix:0.4,
     shapeScale:225, shapeSpin:0.07, audioDeform:0.5, shapeAttract:0.9, swirl:1.2,
     liquid:0.55, metal:0.95, irid:0.75, raymarchOpacity:1.0, glow:0.7,
     shardShape:'icosa', shardScale:2.0, shardCount:744, particleCount:3080,
     pointSize:1.3, particleOpacity:0.4, trailDecay:0.86, bloom:1.0, streak:0.46,
     rays:0.25, camDist:540, camSpin:0.06 },
 
-  { name:'Lava', bgIntensity:0.78, bgContrast:1.0, palette:'Ember', shapeA:SHAPES.organic, shapeB:SHAPES.jelly, shapeMix:0.3,
+  { name:'Lava', bgIntensity:0.58, bgContrast:1.0, palette:'Ember', shapeA:SHAPES.organic, shapeB:SHAPES.jelly, shapeMix:0.3,
     shapeScale:232, shapeSpin:0.04, shapeWarp:0.2, audioDeform:0.9, shapeAttract:0.85, swirl:1.6,
     liquid:0.85, metal:0.25, irid:0.3, raymarchOpacity:1.0, glow:1.4,
     shardShape:'octa', shardScale:2.2, shardCount:620, particleCount:4840,
     pointSize:1.8, particleOpacity:0.6, trailDecay:0.92, bloom:1.3, streak:0.25,
     rays:0.35, grain:0.06, camDist:557 },
 
-  { name:'Chrome', bgIntensity:0.42, bgContrast:0.88, palette:'Ocean', shapeA:SHAPES.menger, shapeB:SHAPES.cage, shapeMix:0.25,
+  { name:'Chrome', bgIntensity:0.32, bgContrast:0.88, palette:'Tide', shapeA:SHAPES.menger, shapeB:SHAPES.cage, shapeMix:0.25,
     shapeScale:248, shapeSpin:0.09, audioDeform:0.35, shapeAttract:0.9, swirl:0.9,
     liquid:0.1, metal:1.0, irid:0.65, raymarchOpacity:1.0, glow:0.6,
     shardShape:'box', shardScale:1.8, shardCount:1116, particleCount:3520,
     pointSize:1.2, particleOpacity:0.45, trailDecay:0.84, bloom:0.9, streak:0.55,
     rays:0.20, chroma:0.0026, camDist:595 },
 
-  { name:'Nautilus', bgIntensity:0.5, bgContrast:1.37, palette:'Gold', shapeA:SHAPES.shell, shapeB:SHAPES.coral, shapeMix:0.35,
+  { name:'Nautilus', bgIntensity:0.38, bgContrast:1.37, palette:'Solar', shapeA:SHAPES.shell, shapeB:SHAPES.coral, shapeMix:0.35,
     shapeScale:232, shapeSpin:0.13, audioDeform:0.55, shapeAttract:0.92, swirl:1.4,
     liquid:0.35, metal:0.8, irid:0.85, raymarchOpacity:1.0, glow:1.0,
     shardShape:'blade', shardScale:1.7, shardCount:1240, particleCount:4400,
     pointSize:1.4, particleOpacity:0.55, trailDecay:0.9, bloom:1.1, streak:0.38,
     rays:0.23, camDist:557, camSpin:0.11 },
 
-  { name:'Fractal', bgIntensity:0.44, bgContrast:1.21, palette:'Aurora', shapeA:SHAPES.mandelbulb, shapeB:SHAPES.apollonian, shapeMix:0.3,
+  { name:'Fractal', bgIntensity:0.33, bgContrast:1.21, palette:'Verdant', shapeA:SHAPES.mandelbulb, shapeB:SHAPES.apollonian, shapeMix:0.3,
     shapeScale:209, shapeSpin:0.05, audioDeform:0.4, shapeAttract:0.95, swirl:0.8,
     liquid:0.2, metal:0.7, irid:0.6, raymarchOpacity:1.0, glow:0.85,
     shardShape:'tetra', shardScale:1.5, shardCount:1488, particleCount:3960,
     pointSize:1.1, particleOpacity:0.5, trailDecay:0.88, bloom:1.0, streak:0.34,
     rays:0.28, camDist:502 },
 
-  { name:'Liquid', bgIntensity:0.67, bgContrast:1.06, palette:'Neon', shapeA:SHAPES.twist, shapeB:SHAPES.wave, shapeMix:0.5,
+  { name:'Liquid', bgIntensity:0.50, bgContrast:1.06, palette:'Bloom', shapeA:SHAPES.twist, shapeB:SHAPES.wave, shapeMix:0.5,
     shapeScale:240, shapeSpin:0.16, audioDeform:0.8, shapeAttract:0.8, swirl:2.0,
     liquid:1.0, metal:0.55, irid:0.9, raymarchOpacity:0.95, glow:1.2,
     shardShape:'icosa', shardScale:1.6, shardCount:1612, particleCount:5720,
@@ -194,8 +199,8 @@ export default class PresetManager {
     // ids and geometry names cannot be interpolated: swap them at the crossfade midpoint
     for(const k of SNAP_KEYS) cur[k] = e < 0.5 ? this.start[k] : this.target[k];
 
-    const pa = PALETTES[this.start.palette] || PALETTES.Spectrum;
-    const pb = PALETTES[this.target.palette] || PALETTES.Spectrum;
+    const pa = PALETTES[this.start.palette] || PALETTES.Ink;
+    const pb = PALETTES[this.target.palette] || PALETTES.Ink;
     cur.palette = this.target.palette;
     cur.paletteValues = {
       a: lerpArr(pa.a, pb.a, e), b: lerpArr(pa.b, pb.b, e),
@@ -209,7 +214,7 @@ export default class PresetManager {
 
   applyCurrent(){
     const p = Object.assign({}, this.current);
-    const pal = PALETTES[p.palette] || PALETTES.Spectrum;
+    const pal = PALETTES[p.palette] || PALETTES.Ink;
     p.paletteValues = { a: pal.a.slice(), b: pal.b.slice(), c: pal.c.slice(), d: pal.d.slice() };
     this.apply(p);
   }

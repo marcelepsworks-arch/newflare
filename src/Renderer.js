@@ -49,7 +49,7 @@ export default class Renderer {
     this.postfx = new PostFX(this.renderer);
 
     // live palette + camera state must exist before PresetManager applies its first preset
-    const first = PALETTES.Spectrum;
+    const first = PALETTES.Ink;
     this._palette = { a: first.a.slice(), b: first.b.slice(), c: first.c.slice(), d: first.d.slice() };
     this._paletteTarget = { a: first.a.slice(), b: first.b.slice(), c: first.c.slice(), d: first.d.slice() };
     this._camAngle = 0;
@@ -326,9 +326,20 @@ export default class Renderer {
     this.particlesSystem.step(time, dt, bands);
     this.presetManager.step(dt);
 
+    // Band levels drive the organic equaliser. projectM's relative loudness means 1.0 is
+    // "normal for this track", so the swell shows what is *changing*, not what is loud.
+    if(features && features.bandAtt){
+      if(!this._bandLevels) this._bandLevels = new Array(6).fill(0);
+      for(let i=0;i<6;i++){
+        const rel = Math.max(0, Math.min(1.6, (features.bandAtt[i] - 0.8) / 0.9));
+        this._bandLevels[i] += (rel - this._bandLevels[i]) * Math.min(1, dt * 9);
+      }
+    }
+
     // scale the preset by how the music is actually being played this instant
     this.expression.update(features, dt);
     const ex = this.expression.apply(this.presetManager.current);
+    if(this._bandLevels) ex.bandLevels = this._bandLevels;
     this.particlesSystem.setParams(ex);
     if(this.shards) this.shards.setParams(ex);
     this.postfx.setParams(ex);
@@ -354,7 +365,7 @@ export default class Renderer {
     this._mix = mix;
     const deform = (this._expr ? this._expr.audioDeform : 0) * (0.6 + this._pulse * 0.7);
     this.particlesSystem.setParams({ shapeMix: mix, audioDeform: deform });
-    if(this.raymarch) this.raymarch.setShape({ shapeMix: mix, audioDeform: deform });
+    if(this.raymarch) this.raymarch.setShape({ shapeMix: mix, audioDeform: deform, bandLevels: this._bandLevels });
 
     if(this.shards){
       this.shards.update(this.particlesSystem.posTexture, this.particlesSystem.velTexture,

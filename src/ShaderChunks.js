@@ -280,6 +280,23 @@ uniform vec3 uOffsetA;
 uniform vec3 uOffsetB;
 uniform float uSplit;
 uniform float uScaleRatio;
+// Multi-band organic equaliser: each frequency band owns a direction on the body and
+// swells it from that side. Six lobes fused by the smooth field read as one organism
+// breathing with the mix, rather than six separate meters.
+uniform vec3 uBandDir[6];
+uniform float uBandLevel[6];
+uniform float uBandBulge;
+uniform float uBandSharp;
+
+// weight of each band at a given surface direction, and the dominant band there
+float bandWeight(vec3 dir, int i){
+  return pow(max(dot(dir, uBandDir[i]), 0.0), uBandSharp);
+}
+float bandSwell(vec3 dir){
+  float sum = 0.0;
+  for(int i = 0; i < 6; i++) sum += uBandLevel[i] * bandWeight(dir, i);
+  return sum;
+}
 
 // Flowing domain warp: displacing space itself (rather than the surface) is what makes
 // any shape read as liquid — it melts and runs instead of just wobbling.
@@ -309,6 +326,12 @@ float shapeField(vec3 world, float time){
   float db = sdShape(pb, uShapeB) * scaleB;
 
   float d = mix(mix(da, db, uShapeMix), smin(da, db, 45.0), uSplit);
+
+  // band lobes: cheap directional swell, six dot products rather than six more SDFs
+  if(uBandBulge > 0.001){
+    vec3 dir = length(base) > 1e-4 ? normalize(base) : vec3(0.0, 1.0, 0.0);
+    d -= bandSwell(dir) * uBandBulge * uShapeScale;
+  }
 
   // audio-driven surface displacement keeps the silhouette breathing with the track
   vec3 q = base / uShapeScale;

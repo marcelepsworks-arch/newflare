@@ -39,7 +39,19 @@ export default class RaymarchLayer {
         uOffsetB: { value: new THREE.Vector3() },
         uSplit: { value: 0.0 },
         uScaleRatio: { value: 1.0 },
+        uBandDir: { value: [
+          new THREE.Vector3( 0.00,  1.00,  0.00),
+          new THREE.Vector3( 0.89,  0.45,  0.00),
+          new THREE.Vector3( 0.28,  0.00,  0.96),
+          new THREE.Vector3(-0.81, -0.20,  0.55),
+          new THREE.Vector3(-0.50, -0.85, -0.15),
+          new THREE.Vector3( 0.35, -0.30, -0.89)
+        ] },
+        uBandLevel: { value: new Array(6).fill(0) },
+        uBandBulge: { value: 0.22 },
+        uBandSharp: { value: 2.2 },
         uLiquid: { value: 0.0 },
+        uBandHueSpread: { value: 0.16 },
         uMetal: { value: 0.6 },
         uIrid: { value: 0.5 }
       },
@@ -50,6 +62,7 @@ export default class RaymarchLayer {
         uniform vec3 uCamPos; uniform mat4 uCamMatrix; uniform float uFocal; uniform mat4 uProjView;
         uniform vec3 uPalA, uPalB, uPalC, uPalD;
         uniform float uOpacity, uGlow, uEnergy, uMetal, uIrid;
+        uniform float uBandHueSpread;
         ${NOISE}
         ${SDF}
         ${SDF_FIELD}
@@ -98,7 +111,18 @@ export default class RaymarchLayer {
             // cheap AO from how early the ray converged: crevices stay dark
             float ao = clamp(minDist / 40.0 + 0.55, 0.0, 1.0);
 
-            float tPal = 0.5 + 0.5 * dot(n, vec3(0.0, 1.0, 0.0)) + uEnergy * 0.25 + uTime * 0.01;
+            // the band that owns this part of the surface tints it, so each frequency
+            // reads as its own colour on one continuous body
+            vec3 sdir = length(p) > 1e-4 ? normalize(p) : vec3(0.0, 1.0, 0.0);
+            float wsum = 0.0, bandHue = 0.0;
+            for(int i = 0; i < 6; i++){
+              float w = bandWeight(sdir, i) * (0.15 + uBandLevel[i]);
+              bandHue += (float(i) / 6.0) * w; wsum += w;
+            }
+            bandHue = wsum > 1e-4 ? bandHue / wsum : 0.0;
+
+            float tPal = 0.35 + 0.3 * dot(n, vec3(0.0, 1.0, 0.0)) + uEnergy * 0.12
+                       + uTime * 0.008 + bandHue * uBandHueSpread;
             vec3 base = cosPalette(tPal, uPalA, uPalB, uPalC, uPalD);
             vec3 rimCol = cosPalette(tPal + 0.35, uPalA, uPalB, uPalC, uPalD);
 
@@ -187,6 +211,9 @@ export default class RaymarchLayer {
     if(params.offsetB) u.uOffsetB.value.fromArray(params.offsetB);
     if(typeof params.metal !== 'undefined') u.uMetal.value = params.metal;
     if(typeof params.irid !== 'undefined') u.uIrid.value = params.irid;
+    if(typeof params.bandBulge !== 'undefined') u.uBandBulge.value = params.bandBulge;
+    if(typeof params.bandHueSpread !== 'undefined') u.uBandHueSpread.value = params.bandHueSpread;
+    if(params.bandLevels) for(let i=0;i<6;i++) u.uBandLevel.value[i] = params.bandLevels[i];
     if(params.palette) this.setPalette(params.palette);
   }
 

@@ -59,6 +59,10 @@ export default class ParticlesGPGPU {
       }
       if(opts.offsetA && mat.uniforms.uOffsetA) mat.uniforms.uOffsetA.value.fromArray(opts.offsetA);
       if(opts.offsetB && mat.uniforms.uOffsetB) mat.uniforms.uOffsetB.value.fromArray(opts.offsetB);
+      if(opts.bandLevels && mat.uniforms.uBandLevel){
+        for(let i=0;i<6;i++) mat.uniforms.uBandLevel.value[i] = opts.bandLevels[i];
+      }
+      if(typeof opts.bandBulge !== 'undefined' && mat.uniforms.uBandBulge) mat.uniforms.uBandBulge.value = opts.bandBulge;
     }
 
     const vu = this.velMat && this.velMat.uniforms;
@@ -178,6 +182,17 @@ export default class ParticlesGPGPU {
         uShapeAttract: { value: 0.6 },
         uSwirl: { value: 0.5 },
         uLiquid: { value: 0.0 },
+        uBandDir: { value: [
+          new THREE.Vector3( 0.00,  1.00,  0.00),
+          new THREE.Vector3( 0.89,  0.45,  0.00),
+          new THREE.Vector3( 0.28,  0.00,  0.96),
+          new THREE.Vector3(-0.81, -0.20,  0.55),
+          new THREE.Vector3(-0.50, -0.85, -0.15),
+          new THREE.Vector3( 0.35, -0.30, -0.89)
+        ] },
+        uBandLevel: { value: new Array(6).fill(0) },
+        uBandBulge: { value: 0.22 },
+        uBandSharp: { value: 2.2 },
         uMouse: { value: new THREE.Vector3() },
         uMouseForce: { value: 0.0 },
         uOffsetA: { value: new THREE.Vector3() },
@@ -263,6 +278,18 @@ export default class ParticlesGPGPU {
         uShapeA: { value: 0 }, uShapeB: { value: 1 }, uShapeMix: { value: 0 },
         uShapeScale: { value: 120.0 }, uShapeWarp: { value: 0.0 },
         uShapeSpin: { value: 0.12 }, uAudioDeform: { value: 0.0 }, uLiquid: { value: 0.0 },
+        uBandDir: { value: [
+          new THREE.Vector3( 0.00,  1.00,  0.00),
+          new THREE.Vector3( 0.89,  0.45,  0.00),
+          new THREE.Vector3( 0.28,  0.00,  0.96),
+          new THREE.Vector3(-0.81, -0.20,  0.55),
+          new THREE.Vector3(-0.50, -0.85, -0.15),
+          new THREE.Vector3( 0.35, -0.30, -0.89)
+        ] },
+        uBandLevel: { value: new Array(6).fill(0) },
+        uBandBulge: { value: 0.22 },
+        uBandSharp: { value: 2.2 },
+
         uOffsetA: { value: new THREE.Vector3() },
         uOffsetB: { value: new THREE.Vector3() },
         uSplit: { value: 0.0 },
