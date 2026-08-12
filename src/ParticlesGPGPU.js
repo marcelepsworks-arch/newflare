@@ -189,6 +189,16 @@ export default class ParticlesGPGPU {
       transparent: true
     });
 
+    // If WebGL2 is not available, vertex texture fetch may be unsupported.
+    // Provide a WebGL1-safe fallback particle material that does not sample textures in the vertex shader.
+    if(!renderer.capabilities.isWebGL2){
+      this.particleMat = new THREE.ShaderMaterial({
+        uniforms: { uPointSize:{ value:2.0 }, uColor:{ value: new THREE.Color(0x00ffd5) }, uTime:{ value:0.0 } },
+        vertexShader: `precision highp float; uniform float uPointSize; uniform float uTime; varying vec3 vColor; varying vec3 vNormal; attribute vec2 uv; void main(){ vec2 p = uv - 0.5; float z = sin((uv.x + uv.y) * 12.0 + uTime * 2.0) * 30.0; vec3 pos = vec3(p.x * 400.0, p.y * 400.0, z); vColor = vec3(0.5 + p.x*0.5, 0.3 + p.y*0.5, 0.6); vNormal = vec3(0.0,0.0,1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(pos,1.0); gl_PointSize = uPointSize * (300.0 / - (modelViewMatrix * vec4(pos,1.0)).z); }`,
+        fragmentShader: `precision highp float; varying vec3 vColor; varying vec3 vNormal; void main(){ float d = length(gl_PointCoord - vec2(0.5)); if(d>0.5) discard; vec3 lightDir = normalize(vec3(0.3,0.6,0.8)); float diff = max(dot(normalize(vNormal), lightDir), 0.0); vec3 col = vColor * (0.6 + 0.6 * diff); gl_FragColor = vec4(col, 1.0 - d*1.8); }`,
+        transparent: true
+      });
+    }
     this.particlesMesh = new THREE.Points(this.particleGeo, this.particleMat);
 
     // --- Trails: render particles into a current frame RT and composite with previous trail ---
