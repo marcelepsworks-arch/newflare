@@ -13,6 +13,18 @@ export default class ParticlesGPGPU {
     this.initDone = false;
   }
 
+  // Apply parameter set to the running system (immediate)
+  setParams(opts = {}){
+    if(typeof opts.noiseScale !== 'undefined') this.noiseScale = opts.noiseScale;
+    if(typeof opts.curl !== 'undefined') this.curl = opts.curl;
+    if(typeof opts.damping !== 'undefined') this.damping = opts.damping;
+    if(typeof opts.pointSize !== 'undefined') this.particleMat.uniforms.uPointSize.value = opts.pointSize;
+    if(typeof opts.color !== 'undefined') this.particleMat.uniforms.uColor.value.set(opts.color);
+    if(typeof opts.explode !== 'undefined') this._pendingExplode = opts.explode;
+    if(typeof opts.attractor !== 'undefined') this._pendingAttractor = opts.attractor;
+    if(typeof opts.trailDecay !== 'undefined') this._pendingTrailDecay = opts.trailDecay;
+  }
+
   _makeRenderTarget(){
     return new THREE.WebGLRenderTarget(this.texWidth, this.texHeight, {
       wrapS: THREE.ClampToEdgeWrapping,
@@ -227,6 +239,10 @@ export default class ParticlesGPGPU {
       this.modeBlend = start + (targetVal - start) * t;
       if(t>=1.0){ this.mode = this.targetMode; }
     }
+    // apply pending attractor/explode/trailDecay set via setParams
+    if(this._pendingAttractor) this.velMat.uniforms.uAttractor.value = new THREE.Vector3(...this._pendingAttractor);
+    if(typeof this._pendingExplode !== 'undefined') this.velMat.uniforms.uExplode.value = this._pendingExplode;
+    if(typeof this._pendingTrailDecay !== 'undefined') this.trailCompositeMat.uniforms.uDecay.value = this._pendingTrailDecay;
     // update velocity
     this.velMat.uniforms.uPos.value = this.posRead.texture;
     this.velMat.uniforms.uVel.value = this.velRead.texture;

@@ -1,5 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
 import ParticlesGPGPU from './ParticlesGPGPU.js';
+import PresetManager from './Presets.js';
 
 export default class Renderer {
   constructor(canvas){
@@ -28,6 +29,11 @@ export default class Renderer {
     this.particlesSystem = new ParticlesGPGPU(this.renderer, { count: 131072, noiseScale:0.0025, curl:1.2, damping:0.985 });
     await this.particlesSystem.init();
     this.scene.add(this.particlesSystem.particlesMesh);
+
+    // presets manager: auto-crossfade between high-quality presets on onset
+    this.presetManager = new PresetManager(this.particlesSystem);
+    // apply initial preset instantly
+    this.presetManager._applyToSystem(this.presetManager.current);
 
     // overlay scene to draw trail texture on top
     this.overlayScene = new THREE.Scene();
@@ -79,9 +85,15 @@ export default class Renderer {
     const bands = Array.isArray(features) ? features : (features && features.bands ? features.bands : null);
     const dt = 1/60;
     this.particlesSystem.step(time, dt, bands);
-    // if full features object provided, check onset
+    // step presets manager so parameters smoothly interpolate
+    if(this.presetManager) this.presetManager.step(dt);
+    // if full features object provided, check onset and trigger preset crossfade
     if(features && typeof features === 'object' && features.onset){
-      // cycle modes on onset
+      if(!this._presetIndex) this._presetIndex = 0;
+      this._presetIndex = (this._presetIndex + 1);
+      // trigger change to next preset (PresetManager handles wrap)
+      this.presetManager.next(0.6);
+      // also cycle particle mode occasionally for more variety
       if(!this._modeIndex) this._modeIndex = 0;
       this._modeIndex = (this._modeIndex + 1) % 3;
       const modes = ['curl','attract','explode'];
