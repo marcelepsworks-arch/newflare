@@ -209,12 +209,11 @@ export default class ParticlesGPGPU {
 
     this.particleMat = new THREE.ShaderMaterial({
       uniforms: {
-        uPosTex: { value: null }, uPointSize: { value: 2.0 }, uColor: { value: new THREE.Color(0x00ffd5) }
+        uPosTex: { value: null }, uPointSize: { value: 2.0 }, uColor: { value: new THREE.Color(0x00ffd5) }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
-      vertexShader: `precision highp float; uniform sampler2D uPosTex; uniform float uPointSize; varying vec3 vColor; varying vec3 vNormal; attribute vec2 uv; void main(){ vec4 p = texture2D(uPosTex, uv); vec3 pos = p.xyz; vColor = vec3(0.5+pos.x*0.002, 0.3+pos.y*0.002, 0.6);
-        // approximate normal from neighbor samples in the pos texture
-        vec2 texSize = vec2(textureSize(uPosTex,0));
-        vec2 off = vec2(1.0,0.0)/texSize;
+      vertexShader: `precision highp float; uniform sampler2D uPosTex; uniform float uPointSize; uniform vec2 uTexSize; varying vec3 vColor; varying vec3 vNormal; attribute vec2 uv; void main(){ vec4 p = texture2D(uPosTex, uv); vec3 pos = p.xyz; vColor = vec3(0.5+pos.x*0.002, 0.3+pos.y*0.002, 0.6);
+        // approximate normal from neighbor samples in the pos texture using supplied tex size
+        vec2 off = vec2(1.0,0.0)/uTexSize;
         vec3 pR = texture2D(uPosTex, uv + off.xy).xyz;
         vec3 pU = texture2D(uPosTex, uv + off.yx).xyz;
         vNormal = normalize(cross(pR - pos, pU - pos));
