@@ -71,6 +71,10 @@ export default class ParticlesGPGPU {
       if(typeof opts.swirl !== 'undefined') vu.uSwirl.value = opts.swirl;
     }
     if(typeof opts.shell !== 'undefined' && this.posMat) this.posMat.uniforms.uShell.value = opts.shell;
+    if(vu){
+      if(opts.mouse) vu.uMouse.value.copy(opts.mouse);
+      if(typeof opts.mouseForce !== 'undefined') vu.uMouseForce.value = opts.mouseForce;
+    }
   }
 
   setMode(m, duration = 0.6){
@@ -174,6 +178,8 @@ export default class ParticlesGPGPU {
         uShapeAttract: { value: 0.6 },
         uSwirl: { value: 0.5 },
         uLiquid: { value: 0.0 },
+        uMouse: { value: new THREE.Vector3() },
+        uMouseForce: { value: 0.0 },
         uOffsetA: { value: new THREE.Vector3() },
         uOffsetB: { value: new THREE.Vector3() },
         uSplit: { value: 0.0 },
@@ -186,6 +192,7 @@ export default class ParticlesGPGPU {
         uniform float uBands[6];
         uniform float uModeBlend, uExplode, uBounds, uShapeAttract, uSwirl;
         uniform vec3 uAttractor;
+        uniform vec3 uMouse; uniform float uMouseForce;
         ${NOISE}
         ${SDF}
         ${SDF_FIELD}
@@ -227,6 +234,13 @@ export default class ParticlesGPGPU {
 
           vec3 wander = mix(turbulence, attractForce + explodeForce, uModeBlend);
           vec3 force = mix(wander, shapeForce, uShapeAttract) + audioImp;
+
+          // pointer force: attracts or repels depending on sign, falling off with distance
+          if(abs(uMouseForce) > 0.001){
+            vec3 toMouse = uMouse - pos;
+            float md2 = dot(toMouse, toMouse) + 900.0;
+            force += normalize(toMouse + vec3(1e-5)) * uMouseForce * 9000.0 / md2;
+          }
 
           float over = length(pos) - uBounds;
           if(over > 0.0) force -= radial * over * 0.03;

@@ -75,7 +75,69 @@ export default class Renderer {
     });
 
     window.addEventListener('resize', ()=>this.onResize());
+    this._bindPointer();
     this._buildGui();
+  }
+
+  // Mouse control. Drag orbits, wheel dollies, moving the pointer drives a force field
+  // through the particles, and clicking throws the scene into a new shape.
+  _bindPointer(){
+    const el = this.canvas;
+    this._pointer = new THREE.Vector2();
+    this._mouseWorld = new THREE.Vector3();
+    this._raycaster = new THREE.Raycaster();
+    this._plane = new THREE.Plane();
+    this._camDir = new THREE.Vector3();
+    this._mouseActive = false;
+    this._dragging = false;
+    this._dragMoved = 0;
+    this._userDist = 0;
+    this._burst = 0;
+
+    const setPointer = (e)=>{
+      const r = el.getBoundingClientRect();
+      this._pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      this._mouseActive = true;
+    };
+
+    el.addEventListener('pointermove', (e)=>{
+      setPointer(e);
+      if(this._dragging){
+        this._dragMoved += Math.abs(e.movementX) + Math.abs(e.movementY);
+        this._camAngle -= e.movementX * 0.005;
+        this._shot.height = Math.max(-320, Math.min(320, this._shot.height - e.movementY * 1.2));
+      }
+    });
+    el.addEventListener('pointerdown', (e)=>{ setPointer(e); this._dragging = true; this._dragMoved = 0; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointerup', (e)=>{
+      this._dragging = false;
+      // a press without movement is a click: re-roll the shape and kick the field
+      if(this._dragMoved < 6){
+        this.director.advanceShape();
+        this._burst = 1.0;
+      }
+      try{ el.releasePointerCapture(e.pointerId); }catch(_){}
+    });
+    el.addEventListener('pointerleave', ()=>{ this._mouseActive = false; this._dragging = false; });
+    el.addEventListener('wheel', (e)=>{
+      e.preventDefault();
+      this._userDist = Math.max(-260, Math.min(500, this._userDist + e.deltaY * 0.35));
+    }, { passive: false });
+  }
+
+  _stepPointer(dt){
+    if(!this._pointer) return;
+    // project the pointer onto the plane through the look target, facing the camera
+    this.camera.getWorldDirection(this._camDir);
+    this._plane.setFromNormalAndCoplanarPoint(this._camDir, this._look);
+    this._raycaster.setFromCamera(this._pointer, this.camera);
+    if(this._raycaster.ray.intersectPlane(this._plane, this._mouseWorld)){
+      // repel while dragging, attract otherwise; the beat pulse makes the grip breathe
+      const dir = this._dragging ? -1 : 1;
+      const strength = this._mouseActive ? dir * (0.5 + this._pulse * 0.8) : 0;
+      this.particlesSystem.setParams({ mouse: this._mouseWorld, mouseForce: strength + this._burst * 4.0 });
+    }
+    this._burst = Math.max(0, this._burst - dt * 2.0);
   }
 
   applyPreset(p){
@@ -258,6 +320,7 @@ export default class Renderer {
     this.presetManager.step(dt);
     this._stepPalette(dt, features);
     this._stepLayout(dt);
+    this._stepPointer(dt);
     if(this._guiState ? this._guiState.autoOnset : true) this.director.update(features);
 
     // Morph is driven by beat phase when a tempo is locked, and by a free-running LFO
@@ -296,7 +359,7 @@ export default class Renderer {
 
     this._camAngle += shot.spin * dt;
     // the beat pulse pushes the camera in slightly, which sells the hit
-    const dist = shot.dist * (1.0 - this._energy * 0.08 - this._pulse * 0.05);
+    const dist = Math.max(120, shot.dist + (this._userDist || 0)) * (1.0 - this._energy * 0.08 - this._pulse * 0.05);
     this.camera.position.set(
       Math.sin(this._camAngle) * dist,
       shot.height + Math.sin(this._camAngle * 0.7) * shot.bob,
