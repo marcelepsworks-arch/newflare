@@ -22,6 +22,11 @@
 
     <main class="stage">
       <canvas id="glCanvas"></canvas>
+      <div id="audioHud">
+        <span id="hudBeat" class="beat-dot"></span>
+        <span id="hudBpm">— BPM</span>
+        <div class="level-track"><div id="hudLevel" class="level-fill"></div></div>
+      </div>
       <div id="overlayGui"></div>
       <div id="errorOverlay" style="display:none;position:fixed;left:12px;right:12px;top:80px;padding:12px;background:rgba(20,10,10,0.9);color:#fff;border-radius:8px;z-index:2000;max-height:40vh;overflow:auto;font-family:monospace;font-size:13px"></div>
     </main>

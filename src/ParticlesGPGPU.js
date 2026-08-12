@@ -50,13 +50,15 @@ export default class ParticlesGPGPU {
     // the shape field is evaluated in both compute passes, so keep them in lockstep
     const shared = {
       shapeA:'uShapeA', shapeB:'uShapeB', shapeMix:'uShapeMix', shapeScale:'uShapeScale',
-      shapeWarp:'uShapeWarp', shapeSpin:'uShapeSpin', audioDeform:'uAudioDeform'
+      shapeWarp:'uShapeWarp', shapeSpin:'uShapeSpin', audioDeform:'uAudioDeform', liquid:'uLiquid', split:'uSplit', scaleRatio:'uScaleRatio'
     };
     for(const mat of [this.velMat, this.posMat]){
       if(!mat) continue;
       for(const key in shared){
         if(typeof opts[key] !== 'undefined' && mat.uniforms[shared[key]]) mat.uniforms[shared[key]].value = opts[key];
       }
+      if(opts.offsetA && mat.uniforms.uOffsetA) mat.uniforms.uOffsetA.value.fromArray(opts.offsetA);
+      if(opts.offsetB && mat.uniforms.uOffsetB) mat.uniforms.uOffsetB.value.fromArray(opts.offsetB);
     }
 
     const vu = this.velMat && this.velMat.uniforms;
@@ -170,7 +172,12 @@ export default class ParticlesGPGPU {
         uShapeSpin: { value: 0.12 },
         uAudioDeform: { value: 0.0 },
         uShapeAttract: { value: 0.6 },
-        uSwirl: { value: 0.5 }
+        uSwirl: { value: 0.5 },
+        uLiquid: { value: 0.0 },
+        uOffsetA: { value: new THREE.Vector3() },
+        uOffsetB: { value: new THREE.Vector3() },
+        uSplit: { value: 0.0 },
+        uScaleRatio: { value: 1.0 }
       },
       vertexShader: passVertex,
       fragmentShader: `precision highp float;
@@ -213,7 +220,10 @@ export default class ParticlesGPGPU {
           vec3 attractForce = (toAttractor / dist) * (600.0 / (dist * dist));
           vec3 explodeForce = radial * uExplode;
 
-          vec3 audioImp = radial * bass * 1.1 + turbulence * highs * 0.7;
+          // Bands are peak-normalised, so the raw impulse would overpower the shape lock.
+          // The tighter a preset holds its shape, the more the audio deforms it instead of
+          // launching particles away from it.
+          vec3 audioImp = (radial * bass * 0.5 + turbulence * highs * 0.35) * (1.0 - uShapeAttract * 0.6);
 
           vec3 wander = mix(turbulence, attractForce + explodeForce, uModeBlend);
           vec3 force = mix(wander, shapeForce, uShapeAttract) + audioImp;
@@ -238,7 +248,11 @@ export default class ParticlesGPGPU {
         uTime: { value: 0 }, uSnap: { value: 0.25 }, uShell: { value: 6.0 },
         uShapeA: { value: 0 }, uShapeB: { value: 1 }, uShapeMix: { value: 0 },
         uShapeScale: { value: 120.0 }, uShapeWarp: { value: 0.0 },
-        uShapeSpin: { value: 0.12 }, uAudioDeform: { value: 0.0 }
+        uShapeSpin: { value: 0.12 }, uAudioDeform: { value: 0.0 }, uLiquid: { value: 0.0 },
+        uOffsetA: { value: new THREE.Vector3() },
+        uOffsetB: { value: new THREE.Vector3() },
+        uSplit: { value: 0.0 },
+        uScaleRatio: { value: 1.0 },
       },
       vertexShader: passVertex,
       fragmentShader: `precision highp float;

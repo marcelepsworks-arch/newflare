@@ -23,33 +23,50 @@ async function init() {
     console.error('UnhandledRejection', ev.reason);
   });
 
-  const canvas = document.getElementById('glCanvas');
-  console.log('init: creating renderer');
-  renderer = new Renderer(canvas);
-  await renderer.init();
-
+  // Audio and UI come up first and independently of WebGL: if the renderer fails, the
+  // user must still be able to load a track rather than face dead controls.
   audioManager = new AudioSourceManager();
   await audioManager.init();
-  console.log('init: audio manager ready');
-
-  analyzer = new AudioAnalyzer(audioManager.getAudioContext(), audioManager.getMasterNode());
-  console.log('init: analyzer created');
-
+  analyzer = new AudioAnalyzer(audioManager.getAudioContext(), audioManager.getAnalysisNode());
   bindUI();
+
+  const canvas = document.getElementById('glCanvas');
+  renderer = new Renderer(canvas);
+  try{
+    await renderer.init();
+  }catch(err){
+    console.error('Renderer init failed', err);
+    const overlay = document.getElementById('errorOverlay');
+    overlay.style.display = 'block';
+    overlay.textContent = 'El motor gràfic no ha pogut arrencar: ' + (err.message || err);
+    return;
+  }
 
   // debug handle: lets tooling drive the audio graph and inspect live features
   window.__NEWFLARE = { audioManager, analyzer, renderer };
 
-  // Auto-start visuals immediately for debugging and to prove rendering works
-  console.log('auto-starting visual renderer');
   renderer.start((time, dt)=>{
     try{
       const features = analyzer.getFeatures();
-      renderer.update(time, features);
+      renderer.update(time, features, dt);
+      updateHud(features);
     }catch(err){
-      console.error('Auto render callback error', err);
+      console.error('Render callback error', err);
     }
   });
+}
+
+// Small readout so it is obvious at a glance whether the visuals are hearing the track.
+function updateHud(features){
+  const hud = document.getElementById('audioHud');
+  if(!hud) return;
+  const level = Math.min(1, features.energyNorm || 0);
+  document.getElementById('hudLevel').style.width = (level * 100).toFixed(0) + '%';
+  const locked = (features.beatConfidence || 0) > 0.15;
+  document.getElementById('hudBpm').textContent = locked ? Math.round(features.bpm) + ' BPM' : '— BPM';
+  const dot = document.getElementById('hudBeat');
+  dot.style.opacity = (0.15 + (features.beatPulse || 0) * 0.85).toFixed(2);
+  dot.style.transform = `scale(${(0.8 + (features.beatPulse || 0) * 0.6).toFixed(2)})`;
 }
 
 function bindUI(){

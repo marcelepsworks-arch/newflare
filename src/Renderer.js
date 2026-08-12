@@ -4,9 +4,11 @@ import ShardsLayer from './ShardsLayer.js';
 import RaymarchLayer from './RaymarchLayer.js';
 import PostFX from './PostFX.js';
 import PresetManager, { PALETTES, SHAPES } from './Presets.js';
+import Director, { SHOTS } from './Director.js';
 import { GUI } from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18.0/dist/lil-gui.esm.min.js';
 
 const SHAPE_NAMES = Object.keys(SHAPES);
+const lerp = (a, b, t) => a + (b - a) * t;
 
 export default class Renderer {
   constructor(canvas){
@@ -38,11 +40,39 @@ export default class Renderer {
     if(!this.particlesSystem.simpleFallback){
       this.shards = new ShardsLayer({ count: 3000 });
       this.scene.add(this.shards.init(this.particlesSystem.texWidth, this.particlesSystem.texHeight));
-      this.raymarch = new RaymarchLayer();
+      this.raymarch = new RaymarchLayer(this.renderer, 0.5);
     }
 
     this.postfx = new PostFX(this.renderer);
+
+    // live palette + camera state must exist before PresetManager applies its first preset
+    const first = PALETTES.Spectrum;
+    this._palette = { a: first.a.slice(), b: first.b.slice(), c: first.c.slice(), d: first.d.slice() };
+    this._paletteTarget = { a: first.a.slice(), b: first.b.slice(), c: first.c.slice(), d: first.d.slice() };
+    this._camAngle = 0;
+    this._shot = Object.assign({}, SHOTS[0]);
+    this._shotTarget = Object.assign({}, SHOTS[0]);
+
     this.presetManager = new PresetManager((p) => this.applyPreset(p));
+
+    this._hue = 0;
+    this._mix = 0;
+    // layout state is interpolated: bodies drift to their new places instead of teleporting
+    this._layout = { split: 0, offsetA: [0,0,0], offsetB: [0,0,0], scaleRatio: 1 };
+    this._layoutTarget = { split: 0, offsetA: [0,0,0], offsetB: [0,0,0], scaleRatio: 1 };
+    this._look = new THREE.Vector3();
+    this._lookTarget = new THREE.Vector3();
+
+    this.director = new Director({
+      onShape: (id) => this.advanceShape(id),
+      onLayout: (l) => {
+        this._layoutTarget = { split: l.split, offsetA: l.offsetA, offsetB: l.offsetB, scaleRatio: l.scaleRatio };
+        this._lookTarget.fromArray(l.lookAt);
+      },
+      onShot: (shot) => { this._shotTarget = Object.assign({}, shot); },
+      onPalette: (name) => this.setPalette(name),
+      onPreset: () => this.cyclePreset()
+    });
 
     window.addEventListener('resize', ()=>this.onResize());
     this._buildGui();
@@ -50,11 +80,60 @@ export default class Renderer {
 
   applyPreset(p){
     const palette = p.paletteValues;
-    this.particlesSystem.setParams(Object.assign({}, p, { palette }));
-    if(this.shards) this.shards.setParams(Object.assign({}, p, { palette }));
-    if(this.raymarch) this.raymarch.setShape(Object.assign({}, p, { palette }));
+    if(palette) this._paletteTarget = palette;
+    this.particlesSystem.setParams(Object.assign({}, p, { palette: this._palette }));
+    if(this.shards) this.shards.setParams(Object.assign({}, p, { palette: this._palette }));
+    if(this.raymarch) this.raymarch.setShape(Object.assign({}, p, { palette: this._palette }));
     this.postfx.setParams(p);
-    this._cam = { dist: p.camDist, spin: p.camSpin, bob: p.camBob };
+    this._shotTarget.dist = p.camDist;
+    this._shotTarget.spin = p.camSpin;
+    this._shotTarget.bob = p.camBob;
+  }
+
+  _stepPalette(dt, features){
+    const t = Math.min(1, dt * 1.2);
+    for(const key of ['a','b','c','d']){
+      const cur = this._palette[key], tgt = this._paletteTarget[key];
+      for(let i=0;i<3;i++) cur[i] = lerp(cur[i], tgt[i], t);
+    }
+
+    // The phase term of the cosine palette *is* the dominant hue. Sliding it every frame
+    // — faster when the track is loud, kicked on each beat — keeps the colour moving
+    // instead of holding one scheme until the next palette change.
+    const energy = this._energy || 0;
+    const tilt = (features && features.spectralTilt) || 0;
+    this._hue += dt * (0.03 + energy * 0.14) + (features && features.beat ? 0.02 : 0);
+    // treble-heavy passages push the hue one way, bass-heavy the other
+    const shift = this._hue + tilt * 0.12;
+
+    const live = {
+      a: this._palette.a,
+      b: this._palette.b,
+      c: this._palette.c,
+      d: this._palette.d.map(v => v + shift)
+    };
+    this.particlesSystem.setParams({ palette: live });
+    if(this.shards) this.shards.setPalette(live);
+    if(this.raymarch) this.raymarch.setPalette(live);
+  }
+
+  // Replace whichever shape slot the morph is currently *not* showing, so a new form
+  // always arrives by fading in rather than popping.
+  advanceShape(id){
+    this.setShape(this._mix < 0.5 ? 'shapeB' : 'shapeA', id);
+  }
+
+  _stepLayout(dt){
+    const k = Math.min(1, dt * 0.8);
+    const cur = this._layout, tgt = this._layoutTarget;
+    cur.split = lerp(cur.split, tgt.split, k);
+    cur.scaleRatio = lerp(cur.scaleRatio, tgt.scaleRatio, k);
+    for(let i=0;i<3;i++){
+      cur.offsetA[i] = lerp(cur.offsetA[i], tgt.offsetA[i], k);
+      cur.offsetB[i] = lerp(cur.offsetB[i], tgt.offsetB[i], k);
+    }
+    this.particlesSystem.setParams(cur);
+    if(this.raymarch) this.raymarch.setShape(cur);
   }
 
   _buildGui(){
@@ -121,9 +200,8 @@ export default class Renderer {
     const pal = PALETTES[name];
     if(!pal) return;
     this.presetManager.current.palette = name;
-    this.particlesSystem.setParams({ palette: pal });
-    if(this.shards) this.shards.setPalette(pal);
-    if(this.raymarch) this.raymarch.setPalette(pal);
+    // hand it to the interpolator rather than snapping: colour should drift, not cut
+    this._paletteTarget = { a: pal.a.slice(), b: pal.b.slice(), c: pal.c.slice(), d: pal.d.slice() };
   }
 
   cyclePreset(){
@@ -137,6 +215,7 @@ export default class Renderer {
     this.camera.updateProjectionMatrix();
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.postfx.setSize(size.x, size.y);
+    if(this.raymarch) this.raymarch.setSize(size.x, size.y);
   }
 
   start(renderCallback){
@@ -156,7 +235,7 @@ export default class Renderer {
         this.stop();
         return;
       }
-      this.renderFrame(now);
+      this.renderFrame(now, dt);
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
@@ -171,49 +250,62 @@ export default class Renderer {
     // smooth the audio drive so geometry does not jitter frame to frame
     this._energy += (energy - this._energy) * 0.12;
     this._bass += (bass - this._bass) * 0.2;
+    // beatPulse spikes on the beat and decays, so anything riding it lands with the music
+    this._pulse = (features && features.beatPulse) || 0;
+    this._beatPhase = (features && features.beatPhase) || 0;
 
     this.particlesSystem.step(time, dt, bands);
     this.presetManager.step(dt);
+    this._stepPalette(dt, features);
+    this._stepLayout(dt);
+    if(this._guiState ? this._guiState.autoOnset : true) this.director.update(features);
 
-    // continuous morph between the two shapes of the active preset
+    // Morph is driven by beat phase when a tempo is locked, and by a free-running LFO
+    // otherwise, so the fusion between the two shapes never sits still.
     const speed = this._guiState ? this._guiState.morphSpeed : 0.15;
-    this._morphPhase += dt * speed;
+    const locked = features && features.beatConfidence > 0.15;
+    if(locked){
+      // one full A->B->A sweep every 8 beats
+      this._morphPhase = ((features.beatCount % 8) + features.beatPhase) / 8 * Math.PI * 2;
+    } else {
+      this._morphPhase += dt * speed;
+    }
     const base = this.presetManager.current.shapeMix || 0;
     const mix = Math.min(1, Math.max(0, base + 0.5 + 0.5 * Math.sin(this._morphPhase)));
-    const deform = (this.presetManager.current.audioDeform || 0) * (0.4 + this._energy * 1.6);
+    this._mix = mix;
+    const deform = (this.presetManager.current.audioDeform || 0) * (0.45 + this._energy * 0.7 + this._pulse * 0.8);
     this.particlesSystem.setParams({ shapeMix: mix, audioDeform: deform });
     if(this.raymarch) this.raymarch.setShape({ shapeMix: mix, audioDeform: deform });
 
     if(this.shards){
-      this.shards.update(this.particlesSystem.posTexture, this.particlesSystem.velTexture, time, this._energy, this._bass);
-    }
-
-    const autoOnset = !this._guiState || this._guiState.autoOnset;
-    this._sinceSwitch = (this._sinceSwitch || 0) + dt;
-    this._sinceShape = (this._sinceShape || 0) + dt;
-    if(autoOnset && features && features.onset){
-      // strong onsets re-roll the target shape; only rare ones change the whole preset
-      if(this._sinceShape > 2.5){
-        this._sinceShape = 0;
-        this.setShape('shapeB', Math.floor(Math.random() * SHAPE_NAMES.length));
-      }
-      if(this._sinceSwitch > 12.0){
-        this._sinceSwitch = 0;
-        this.cyclePreset();
-      }
+      this.shards.update(this.particlesSystem.posTexture, this.particlesSystem.velTexture,
+        time, this._energy, this._bass * 0.5 + this._pulse * 0.6);
     }
   }
 
-  renderFrame(time){
+  renderFrame(time, dt = 1/60){
     const r = this.renderer;
-    const cam = this._cam || { dist: 320, spin: 0.05, bob: 12 };
-    const dist = cam.dist * (1.0 - this._energy * 0.12);
+
+    // ease toward the director's current shot so cuts read as moves, not jumps
+    const shot = this._shot, target = this._shotTarget;
+    const k = Math.min(1, dt * 1.1);
+    shot.dist = lerp(shot.dist, target.dist, k);
+    shot.height = lerp(shot.height, target.height, k);
+    shot.spin = lerp(shot.spin, target.spin, k);
+    shot.bob = lerp(shot.bob, target.bob, k);
+
+    this._camAngle += shot.spin * dt;
+    // the beat pulse pushes the camera in slightly, which sells the hit
+    const dist = shot.dist * (1.0 - this._energy * 0.08 - this._pulse * 0.05);
     this.camera.position.set(
-      Math.sin(time * cam.spin) * dist,
-      Math.sin(time * cam.spin * 0.7) * cam.bob,
-      Math.cos(time * cam.spin) * dist
+      Math.sin(this._camAngle) * dist,
+      shot.height + Math.sin(this._camAngle * 0.7) * shot.bob,
+      Math.cos(this._camAngle) * dist
     );
-    this.camera.lookAt(0, 0, 0);
+    // reframe toward whichever body the director picked, so the subject moves around frame
+    this._look.lerp(this._lookTarget, Math.min(1, dt * 0.7));
+    this.camera.position.add(this._look);
+    this.camera.lookAt(this._look);
     this.camera.updateMatrixWorld();
 
     if(this.raymarch){
@@ -230,7 +322,8 @@ export default class Renderer {
     r.setRenderTarget(this.postfx.sceneRT);
     r.render(this.scene, this.camera);
 
-    this.postfx.present();
+    this.postfx.setPulse(this._pulse);
+    this.postfx.present(time);
   }
 
   _installLogHelpers(){

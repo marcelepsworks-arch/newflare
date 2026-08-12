@@ -1,7 +1,10 @@
+import BeatTracker from './BeatTracker.js';
+
 export default class AudioAnalyzer {
   constructor(audioContext, inputNode){
     this.audioContext = audioContext;
     this.inputNode = inputNode;
+    this.beatTracker = new BeatTracker();
 
     this.fftSize = 2048;
     this.analyser = this.audioContext.createAnalyser();
@@ -15,6 +18,10 @@ export default class AudioAnalyzer {
     this.bands = [ [20,60],[60,250],[250,500],[500,2000],[2000,4000],[4000,20000] ];
     this.smoothed = new Array(this.bands.length).fill(0);
     this.smoothing = 0.85;
+    // per-band running peak, so a quiet mix drives the visuals as hard as a loud one
+    this.bandPeak = new Array(this.bands.length).fill(0.05);
+    this.peakDecay = 0.9995;
+    this.peakFloor = 0.04;
 
     // spectral flux / onset detection state
     this.prevSpectrum = new Float32Array(this.analyser.frequencyBinCount);
@@ -55,7 +62,9 @@ export default class AudioAnalyzer {
       const avg = n? s/n : 0;
       // exponential smoothing per-band
       this.smoothed[b] = this.smoothing * this.smoothed[b] + (1-this.smoothing) * avg;
-      bandVals.push(this.smoothed[b]);
+      // adaptive gain: track the recent peak and report the band relative to it
+      this.bandPeak[b] = Math.max(this.bandPeak[b] * this.peakDecay, this.smoothed[b], this.peakFloor);
+      bandVals.push(Math.min(1, this.smoothed[b] / this.bandPeak[b]));
     }
 
     // spectral flux (sum of positive differences)
@@ -98,21 +107,36 @@ export default class AudioAnalyzer {
     // energy history
     this.energyHistory[this.energyIndex] = rms;
     this.energyIndex = (this.energyIndex + 1) % this.energyHistory.length;
-    // update maxEnergy for normalization
-    let maxE = 1e-6; for(let v of this.energyHistory) if(v>maxE) maxE=v; this.maxEnergy = maxE;
+    // A 1-second window pins energyNorm at ~1 for any steady track. Normalise against a
+    // slowly decaying peak instead so quiet passages actually read as quiet.
+    this.maxEnergy = Math.max(this.maxEnergy * 0.9995, rms, 0.01);
 
     // save prev spectrum for next frame
     this.prevSpectrum.set(mags);
 
+    // spectral tilt: -1 = bass dominated, +1 = treble dominated. Drives colour and the
+    // kind of shape the director reaches for, so the visuals track the *character* of the
+    // sound and not just its loudness.
+    const low = bandVals[0] + bandVals[1];
+    const mid = bandVals[2] + bandVals[3];
+    const high = bandVals[4] + bandVals[5];
+    const spectralTilt = (high - low) / (high + low + 1e-6);
+    const midRatio = mid / (low + mid + high + 1e-6);
+
+    // tempo + beat phase, driven by the same onset envelope
+    const beat = this.beatTracker.update(this.audioContext.currentTime, flux, onset);
+
     // return rich feature set
-    return {
+    return Object.assign({
       bands: bandVals,
       spectralFlux: this.spectralFlux,
       onset: onset,
       onsetConfidence: confidence,
       rms: this.rms,
-      energyNorm: this.rms / (this.maxEnergy + 1e-9)
-    };
+      energyNorm: this.rms / (this.maxEnergy + 1e-9),
+      spectralTilt,
+      midRatio
+    }, beat);
   }
 
   // Backwards-compatible getter: returns band array only

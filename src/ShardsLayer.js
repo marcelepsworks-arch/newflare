@@ -1,5 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
-import { PALETTE } from './ShaderChunks.js';
+import { PALETTE, MATERIAL } from './ShaderChunks.js';
 
 const BASE_GEOMETRIES = {
   icosa: () => new THREE.IcosahedronGeometry(1, 0),
@@ -49,7 +49,9 @@ export default class ShardsLayer {
         uPalB: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
         uPalC: { value: new THREE.Vector3(1.0, 1.0, 1.0) },
         uPalD: { value: new THREE.Vector3(0.0, 0.33, 0.67) },
-        uOpacity: { value: 1.0 }
+        uOpacity: { value: 1.0 },
+        uMetal: { value: 0.7 },
+        uIrid: { value: 0.55 }
       },
       vertexShader: `precision highp float;
         uniform sampler2D uPosTex; uniform sampler2D uVelTex;
@@ -86,22 +88,31 @@ export default class ShardsLayer {
         varying vec3 vNormalW; varying float vSpeed; varying float vSeed; varying vec3 vViewPos;
         uniform vec3 uPalA, uPalB, uPalC, uPalD;
         uniform float uTime; uniform float uEnergy; uniform float uOpacity;
+        uniform float uMetal; uniform float uIrid;
         ${PALETTE}
+        ${MATERIAL}
         void main(){
           vec3 n = normalize(vNormalW);
           vec3 v = normalize(-vViewPos);
           vec3 l1 = normalize(vec3(0.5, 0.9, 0.6));
           vec3 l2 = normalize(vec3(-0.6, -0.3, 0.5));
+          float ndv = max(dot(n, v), 0.0);
           float diff = max(dot(n, l1), 0.0);
           float fill = max(dot(n, l2), 0.0) * 0.4;
-          float rim = pow(1.0 - max(dot(n, v), 0.0), 2.0);
-          float spec = pow(max(dot(reflect(-l1, n), v), 0.0), 24.0);
+          float rim = pow(1.0 - ndv, 2.0);
+          float spec = pow(max(dot(reflect(-l1, n), v), 0.0), 40.0);
 
           float t = vSeed + vSpeed * 0.02 + uTime * 0.03 + uEnergy * 0.2;
           vec3 base = cosPalette(t, uPalA, uPalB, uPalC, uPalD);
           vec3 rimCol = cosPalette(t + 0.4, uPalA, uPalB, uPalC, uPalD);
 
-          vec3 col = base * (0.18 + diff * 0.95 + fill) + rimCol * rim * 1.2 + vec3(spec * 0.8);
+          vec3 env = envSample(reflect(-v, n), base);
+          float f = fresnelSchlick(ndv, mix(0.04, 0.92, uMetal));
+          vec3 irid = iridescence(ndv, uIrid);
+
+          vec3 col = base * (0.18 + diff * 0.95 + fill) * (1.0 - uMetal * 0.8)
+                   + env * f * (0.5 + uMetal) * irid
+                   + rimCol * rim * 1.1 * irid + vec3(spec * (0.5 + uMetal));
           gl_FragColor = vec4(col * uOpacity, 1.0);
         }`,
       transparent: false,
@@ -147,6 +158,8 @@ export default class ShardsLayer {
     const u = this.material.uniforms;
     if(typeof p.shardScale !== 'undefined') u.uScale.value = p.shardScale;
     if(typeof p.shardOpacity !== 'undefined') u.uOpacity.value = p.shardOpacity;
+    if(typeof p.metal !== 'undefined') u.uMetal.value = p.metal;
+    if(typeof p.irid !== 'undefined') u.uIrid.value = p.irid;
     if(typeof p.shardCount !== 'undefined'){
       const geo = this.mesh && this.mesh.geometry;
       if(geo) geo.instanceCount = Math.max(0, Math.min(this.count, Math.round(p.shardCount)));

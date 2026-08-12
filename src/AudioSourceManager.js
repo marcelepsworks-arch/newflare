@@ -12,11 +12,24 @@ export default class AudioSourceManager {
       this.masterGain = this.audioContext.createGain();
       this.masterGain.gain.value = 1.0;
       this.masterGain.connect(this.audioContext.destination);
+      // Analysis bus sits parallel to the output, never downstream of it, so changing
+      // playback volume does not change how strongly the visuals react.
+      this.analysisBus = this.audioContext.createGain();
+      this.analysisBus.gain.value = 1.0;
     }
   }
 
   getAudioContext(){ return this.audioContext; }
   getMasterNode(){ return this.masterGain; }
+  getAnalysisNode(){ return this.analysisBus; }
+
+  // every source routes to both the speakers and the analysis tap
+  _route(node){
+    node.connect(this.masterGain);
+    node.connect(this.analysisBus);
+    this.currentSource = node;
+    return node;
+  }
 
   async loadFile(file){
     // create media element and connect
@@ -42,8 +55,7 @@ export default class AudioSourceManager {
       await el.play();
       await this.audioContext.resume();
       const src = this.audioContext.createMediaElementSource(el);
-      src.connect(this.masterGain);
-      this.currentSource = src;
+      this._route(src);
       console.log('AudioSourceManager: loaded media element and connected to masterGain');
       return el;
     }catch(err){
@@ -59,11 +71,10 @@ export default class AudioSourceManager {
         const bufSrc = this.audioContext.createBufferSource();
         bufSrc.buffer = decoded;
         bufSrc.loop = true;
-        bufSrc.connect(this.masterGain);
+        this._route(bufSrc);
         await this.audioContext.resume();
         bufSrc.start(0);
         this.currentBufferSource = bufSrc;
-        this.currentSource = bufSrc;
         console.log('AudioSourceManager: decoded file and started AudioBufferSourceNode');
         return bufSrc;
       }catch(e){
@@ -78,9 +89,7 @@ export default class AudioSourceManager {
       const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
       // create audio source from stream
       try{ await this.audioContext.resume(); }catch(e){}
-      const src = this.audioContext.createMediaStreamSource(stream);
-      src.connect(this.masterGain);
-      this.currentSource = src;
+      this._route(this.audioContext.createMediaStreamSource(stream));
       // optional: show captured video element for debugging
       const v = document.createElement('video'); v.srcObject = stream; v.autoplay = true; v.muted = true; v.style.display='none'; document.body.appendChild(v);
       return stream;
@@ -94,9 +103,7 @@ export default class AudioSourceManager {
     try{
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       try{ await this.audioContext.resume(); }catch(e){}
-      const src = this.audioContext.createMediaStreamSource(stream);
-      src.connect(this.masterGain);
-      this.currentSource = src;
+      this._route(this.audioContext.createMediaStreamSource(stream));
       return stream;
     }catch(err){
       console.error('Mic access denied', err);
