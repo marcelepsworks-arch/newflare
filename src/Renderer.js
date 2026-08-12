@@ -29,6 +29,19 @@ export default class Renderer {
     await this.particlesSystem.init();
     this.scene.add(this.particlesSystem.particlesMesh);
 
+    // overlay scene to draw trail texture on top
+    this.overlayScene = new THREE.Scene();
+    this.overlayCamera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    const quadGeo = new THREE.PlaneGeometry(2,2);
+    this.overlayMat = new THREE.ShaderMaterial({
+      uniforms: { uTexture: { value: null }, uOpacity: { value: 1.0 } },
+      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `precision highp float; uniform sampler2D uTexture; uniform float uOpacity; void main(){ vec4 c = texture(uTexture, uv); gl_FragColor = vec4(c.rgb, c.a * uOpacity); }`,
+      transparent: true, depthWrite:false
+    });
+    this.overlayQuad = new THREE.Mesh(quadGeo, this.overlayMat);
+    this.overlayScene.add(this.overlayQuad);
+
     window.addEventListener('resize', ()=>this.onResize());
   }
 
@@ -49,6 +62,11 @@ export default class Renderer {
       this._lastTime = now;
       renderCallback(now, dt);
       this.renderer.render(this.scene, this.camera);
+      // draw trail overlay if available
+      if(this.particlesSystem && this.particlesSystem.trailTexture){
+        this.overlayMat.uniforms.uTexture.value = this.particlesSystem.trailTexture;
+        this.renderer.render(this.overlayScene, this.overlayCamera);
+      }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);

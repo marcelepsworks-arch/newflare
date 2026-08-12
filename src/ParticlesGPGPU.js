@@ -165,6 +165,26 @@ export default class ParticlesGPGPU {
 
     this.particlesMesh = new THREE.Points(this.particleGeo, this.particleMat);
 
+    // --- Trails: render particles into a current frame RT and composite with previous trail ---
+    this.currentFrameRT = this._makeRenderTarget();
+    this.trailRT1 = this._makeRenderTarget();
+    this.trailRT2 = this._makeRenderTarget();
+    this.trailRead = this.trailRT1; this.trailWrite = this.trailRT2;
+
+    // composite shader: fade previous trail and add current frame
+    this.trailCompositeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uPrev: { value: null }, uCurr: { value: null }, uDecay: { value: 0.96 }
+      },
+      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; void main(){ vec2 uv = gl_FragCoord.xy / vec2(textureSize(uPrev,0)); vec4 prev = texture(uPrev, uv) * uDecay; vec4 cur = texture(uCurr, uv); // additive blend
+        vec4 outc = prev + cur; outc = clamp(outc, 0.0, 1.0); gl_FragColor = outc; }`,
+      depthWrite: false
+    });
+
+    this.trailQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), this.trailCompositeMat);
+    this.computeScene.add(this.trailQuad);
+
     // mode blending state
     this.mode = 'curl';
     this.targetMode = 'curl';
@@ -243,5 +263,35 @@ export default class ParticlesGPGPU {
 
     // update particle material to read positions
     this.particleMat.uniforms.uPosTex.value = this.posRead.texture;
+
+    // --- render current particle frame into currentFrameRT ---
+    const oldMat = this.particlesMesh.material;
+    // render points on black background into currentFrameRT
+    renderer.setRenderTarget(this.currentFrameRT);
+    renderer.setClearColor(0x000000, 0.0);
+    renderer.clear(true, true, true);
+    // render particlesMesh alone
+    const savedSceneVisible = this.particlesMesh.visible;
+    // We render particles only: create a temp scene
+    const tmpScene = new THREE.Scene();
+    tmpScene.add(this.particlesMesh);
+    renderer.render(tmpScene, this.computeCamera);
+    // cleanup
+    renderer.setRenderTarget(null);
+
+    // composite currentFrameRT with previous trail into trailWrite
+    this.trailCompositeMat.uniforms.uPrev.value = this.trailRead.texture;
+    this.trailCompositeMat.uniforms.uCurr.value = this.currentFrameRT.texture;
+    this.trailCompositeMat.uniforms.uDecay.value = 0.96;
+    this.trailQuad.material = this.trailCompositeMat;
+    renderer.setRenderTarget(this.trailWrite);
+    renderer.render(this.computeScene, this.computeCamera);
+    renderer.setRenderTarget(null);
+
+    // swap trail RTs
+    let ttmp = this.trailRead; this.trailRead = this.trailWrite; this.trailWrite = ttmp;
+
+    // expose trail texture
+    this.trailTexture = this.trailRead.texture;
   }
 }
