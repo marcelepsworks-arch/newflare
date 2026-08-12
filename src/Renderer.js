@@ -54,6 +54,14 @@ export default class Renderer {
     // Setup GUI controls
     try{
       this.gui = new GUI({ width: 320 });
+      // Position GUI so it doesn't overlap the topbar controls (topbar z-index = 1000)
+      const guiEl = this.gui.domElement;
+      guiEl.style.position = 'fixed';
+      guiEl.style.top = '72px';
+      guiEl.style.right = '12px';
+      guiEl.style.zIndex = '900';
+      guiEl.style.maxHeight = '75vh';
+      guiEl.style.overflow = 'auto';
       const sys = this.particlesSystem;
       const pm = this.presetManager;
       const state = {
