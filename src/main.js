@@ -37,6 +37,9 @@ async function init() {
 
   bindUI();
 
+  // debug handle: lets tooling drive the audio graph and inspect live features
+  window.__NEWFLARE = { audioManager, analyzer, renderer };
+
   // Auto-start visuals immediately for debugging and to prove rendering works
   console.log('auto-starting visual renderer');
   renderer.start((time, dt)=>{
@@ -102,7 +105,7 @@ function bindUI(){
         renderer.start((time, dt)=>{
           try{
             const features = analyzer.getFeatures();
-            renderer.update(time, features);
+            renderer.update(time, features, dt);
           }catch(err){
             console.error('Render callback error', err);
           }
