@@ -19,6 +19,63 @@ export default class Renderer {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
+    // initialize shared browser-side logging helpers for shader errors
+    try{
+      if(typeof window !== 'undefined' && !window.__NEWFLARE_logInitialized){
+        window.__NEWFLARE_logBuffer = [];
+        window.__NEWFLARE_autoSaveLogs = true;
+        window.__NEWFLARE_appendLog = function(tag, text){
+          try{
+            const ts = new Date().toISOString();
+            const entry = `--- ${ts} ---\n[${tag}]\n${text}\n\n`;
+            window.__NEWFLARE_logBuffer.push(entry);
+            if(window.__NEWFLARE_logBuffer.length > 200) window.__NEWFLARE_logBuffer.shift();
+          }catch(e){ console.warn('NEWFLARE appendLog failed', e); }
+        };
+        window.__NEWFLARE_saveLogs = function(){
+          try{
+            const blob = new Blob([window.__NEWFLARE_logBuffer.join('\n')], { type: 'text/plain;charset=utf-8' });
+            const name = `newflare-shader-log-${(new Date()).toISOString().replace(/[:.]/g,'-')}.txt`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(()=>URL.revokeObjectURL(url), 15000);
+          }catch(e){ console.warn('NEWFLARE saveLogs failed', e); }
+        };
+        window.__NEWFLARE_dumpAllLogs = function(){ console.log(window.__NEWFLARE_logBuffer.join('\n')); };
+        window.__NEWFLARE_logInitialized = true;
+      }
+    }catch(e){ console.warn('Failed to initialize NEWFLARE log helpers', e); }
+
+    // Wrap GL info log functions to capture logs and auto-save them
+    try{
+      const gl = this.renderer.getContext();
+      if(gl && !window.__NEWFLARE_glWrapped){
+        const origGetProgramInfoLog = gl.getProgramInfoLog.bind(gl);
+        gl.getProgramInfoLog = function(program){
+          try{
+            const info = origGetProgramInfoLog(program);
+            if(info && info.length){
+              console.error('WebGL Program Info Log:', info);
+              try{ window.__NEWFLARE_appendLog('PROGRAM_INFO', info); }catch(_){ }
+            }
+            return info;
+          }catch(e){ return origGetProgramInfoLog(program); }
+        };
+        const origGetShaderInfoLog = gl.getShaderInfoLog.bind(gl);
+        gl.getShaderInfoLog = function(shader){
+          try{
+            const info = origGetShaderInfoLog(shader);
+            if(info && info.length){
+              console.error('WebGL Shader Info Log:', info);
+              try{ window.__NEWFLARE_appendLog('SHADER_INFO', info); }catch(_){ }
+            }
+            return info;
+          }catch(e){ return origGetShaderInfoLog(shader); }
+        };
+        window.__NEWFLARE_glWrapped = true;
+      }
+    }catch(e){ console.warn('Failed to wrap GL info log functions', e); }
+
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 2000);
     this.camera.position.z = 300;
@@ -46,6 +103,9 @@ export default class Renderer {
       fragmentShader: `precision highp float; varying vec2 vUv; uniform sampler2D uTexture; uniform float uOpacity; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = vec4(c.rgb, c.a * uOpacity); }`,
       transparent: true, depthWrite:false
     });
+    // debug hook to log shader sources when compiled
+    this.overlayMat.__debugName = 'overlayMat';
+    this.overlayMat.onBeforeCompile = (shader, renderer)=>{ try{ this.overlayMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader }; console.log('onBeforeCompile overlayMat'); }catch(e){} };
     this.overlayQuad = new THREE.Mesh(quadGeo, this.overlayMat);
     this.overlayScene.add(this.overlayQuad);
 
@@ -64,6 +124,8 @@ export default class Renderer {
       guiEl.style.overflow = 'auto';
       const sys = this.particlesSystem;
       const pm = this.presetManager;
+      const hasParticleUniforms = sys && sys.particleMat && sys.particleMat.uniforms;
+      const hasTrailUniforms = sys && sys.trailCompositeMat && sys.trailCompositeMat.uniforms;
       const state = {
         preset: pm.presets[0].name,
         nextPreset: ()=> pm.next(0.6),
@@ -71,9 +133,9 @@ export default class Renderer {
         noiseScale: sys.noiseScale,
         curl: sys.curl,
         damping: sys.damping,
-        pointSize: sys.particleMat.uniforms.uPointSize.value,
-        color: '#' + sys.particleMat.uniforms.uColor.value.getHexString(),
-        trailDecay: this.particlesSystem.trailCompositeMat.uniforms.uDecay.value
+        pointSize: hasParticleUniforms ? sys.particleMat.uniforms.uPointSize.value : 2.0,
+        color: hasParticleUniforms ? '#' + sys.particleMat.uniforms.uColor.value.getHexString() : '#00ffd5',
+        trailDecay: hasTrailUniforms ? this.particlesSystem.trailCompositeMat.uniforms.uDecay.value : 0.96
       };
 
       const pFolder = this.gui.addFolder('Presets');
@@ -104,13 +166,26 @@ export default class Renderer {
   start(renderCallback){
     if(this.animating) return;
     this.animating = true;
+    console.log('Renderer.start called, scene children:', this.scene.children.length, 'camera z:', this.camera.position.z);
     this._lastTime = performance.now() / 1000;
     const loop = (t)=>{
       if(!this.animating) return;
       const now = t/1000;
       const dt = Math.min(0.06, now - this._lastTime);
       this._lastTime = now;
-      renderCallback(now, dt);
+      try{
+        renderCallback(now, dt);
+      }catch(err){
+        console.error('Render callback exception', err);
+      }
+      // if particles system detected GL error, stop anim and surface debug info
+      if(this.particlesSystem && this.particlesSystem._broken){
+        console.error('ParticlesGPGPU detected GL error; stopping renderer to avoid infinite GL spam.');
+        if(window && window.__NEWFLARE_dumpShaders) window.__NEWFLARE_dumpShaders();
+        if(window && window.__NEWFLARE_saveLogs) window.__NEWFLARE_saveLogs();
+        this.stop();
+        return;
+      }
       this.renderer.render(this.scene, this.camera);
       // draw trail overlay if available
       if(this.particlesSystem && this.particlesSystem.trailTexture){

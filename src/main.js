@@ -36,6 +36,17 @@ async function init() {
   console.log('init: analyzer created');
 
   bindUI();
+
+  // Auto-start visuals immediately for debugging and to prove rendering works
+  console.log('auto-starting visual renderer');
+  renderer.start((time, dt)=>{
+    try{
+      const features = analyzer.getFeatures();
+      renderer.update(time, features);
+    }catch(err){
+      console.error('Auto render callback error', err);
+    }
+  });
 }
 
 function bindUI(){

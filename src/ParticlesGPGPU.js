@@ -7,8 +7,10 @@ export default class ParticlesGPGPU {
     this.noiseScale = options.noiseScale || 0.0025;
     this.curl = options.curl || 1.0;
     this.damping = options.damping || 0.985;
+    this.forceFallback = (typeof options.forceFallback !== 'undefined') ? options.forceFallback : true;
     this.size = Math.ceil(Math.sqrt(this.count));
     this.texWidth = this.size; this.texHeight = this.size;
+    this.simpleFallback = false;
 
     this.initDone = false;
   }
@@ -18,8 +20,20 @@ export default class ParticlesGPGPU {
     if(typeof opts.noiseScale !== 'undefined') this.noiseScale = opts.noiseScale;
     if(typeof opts.curl !== 'undefined') this.curl = opts.curl;
     if(typeof opts.damping !== 'undefined') this.damping = opts.damping;
-    if(typeof opts.pointSize !== 'undefined') this.particleMat.uniforms.uPointSize.value = opts.pointSize;
-    if(typeof opts.color !== 'undefined') this.particleMat.uniforms.uColor.value.set(opts.color);
+    if(typeof opts.pointSize !== 'undefined'){
+      if(this.particleMat && this.particleMat.uniforms && this.particleMat.uniforms.uPointSize){
+        this.particleMat.uniforms.uPointSize.value = opts.pointSize;
+      } else if(this.particleMat && this.particleMat.isPointsMaterial){
+        this.particleMat.size = opts.pointSize;
+      }
+    }
+    if(typeof opts.color !== 'undefined'){
+      if(this.particleMat && this.particleMat.uniforms && this.particleMat.uniforms.uColor){
+        this.particleMat.uniforms.uColor.value.set(opts.color);
+      } else if(this.particleMat && this.particleMat.color){
+        this.particleMat.color.set(opts.color);
+      }
+    }
     if(typeof opts.explode !== 'undefined') this._pendingExplode = opts.explode;
     if(typeof opts.attractor !== 'undefined') this._pendingAttractor = opts.attractor;
     if(typeof opts.trailDecay !== 'undefined') this._pendingTrailDecay = opts.trailDecay;
@@ -38,8 +52,71 @@ export default class ParticlesGPGPU {
     });
   }
 
+  _initCpuFallback(){
+    this.simpleFallback = true;
+    this.cpuCount = this.count;
+    this.cpuPositions = new Float32Array(this.cpuCount * 3);
+    this.cpuVelocities = new Float32Array(this.cpuCount * 3);
+    const uvs = new Float32Array(this.cpuCount * 2);
+    const colors = new Float32Array(this.cpuCount * 3);
+    for(let i=0;i<this.cpuCount;i++){
+      const angle = (i / this.cpuCount) * Math.PI * 8.0;
+      const radius = 180.0 * (0.4 + Math.random() * 0.6);
+      const x = Math.cos(angle) * radius * 0.5;
+      const y = Math.sin(angle) * radius * 0.5;
+      const z = (Math.random() - 0.5) * 140.0;
+      const ix = i * 3;
+      this.cpuPositions[ix] = x;
+      this.cpuPositions[ix + 1] = y;
+      this.cpuPositions[ix + 2] = z;
+      this.cpuVelocities[ix] = (Math.random() - 0.5) * 5.5;
+      this.cpuVelocities[ix + 1] = (Math.random() - 0.5) * 5.5;
+      this.cpuVelocities[ix + 2] = (Math.random() - 0.5) * 5.5;
+      const hue = (i / this.cpuCount) * 0.75 + Math.random() * 0.05;
+      const sat = 0.75 + Math.random() * 0.2;
+      const val = 0.75 + Math.random() * 0.25;
+      const c = new THREE.Color().setHSL(hue % 1.0, sat, val);
+      colors[ix] = c.r;
+      colors[ix + 1] = c.g;
+      colors[ix + 2] = c.b;
+      uvs[i*2] = (i % this.texWidth + 0.5) / this.texWidth;
+      uvs[i*2+1] = (Math.floor(i / this.texWidth) + 0.5) / this.texHeight;
+    }
+    this.cpuGeometry = new THREE.BufferGeometry();
+    this.cpuGeometry.setAttribute('position', new THREE.BufferAttribute(this.cpuPositions, 3));
+    this.cpuGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    this.cpuGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.particleMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0.0 },
+        uPointSize: { value: 4.5 },
+        uBaseColor: { value: new THREE.Color(0xffffff) }
+      },
+      vertexShader: `#ifdef GL_ES\n#define texture2D texture\n#define textureCube texture\n#endif\nprecision highp float; attribute vec3 color; uniform float uTime; uniform float uPointSize; varying vec3 vColor; varying float vPulse; void main(){ vec3 p = position; p.x += sin(uTime * 0.64 + position.y * 0.04) * 8.0; p.y += cos(uTime * 0.54 + position.x * 0.038) * 9.0; p.z += sin(uTime * 0.32 + position.x * 0.016) * 3.0; vPulse = 0.5 + 0.5 * sin(uTime * 2.2 + position.x * 0.03 + position.y * 0.025); vColor = color * (0.8 + 0.2 * sin(uTime * 1.3 + position.z * 0.05)); gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0); gl_PointSize = uPointSize + vPulse * 3.5; }`,
+      fragmentShader: `#ifdef GL_ES\n#define texture2D texture\n#define textureCube texture\n#endif\nprecision highp float; varying vec3 vColor; varying float vPulse; void main(){ float d = length(gl_PointCoord - vec2(0.5)); float alpha = smoothstep(0.5, 0.28, d); vec3 col = vColor * (0.7 + 0.3 * vPulse);
+        gl_FragColor = vec4(col, alpha * 0.85);
+      }`,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false
+    });
+    this.particlesMesh = new THREE.Points(this.cpuGeometry, this.particleMat);
+    this.particlesMesh.frustumCulled = false;
+    this.initDone = true;
+    console.warn('NEWFLARE: CPU fallback initialized for particle rendering with animated colors.');
+    try{ window.__NEWFLARE_appendLog('INFO', 'CPU fallback initialized for particle rendering with animated colors.'); }catch(e){}
+  }
+
   async init(){
     const renderer = this.renderer;
+    const isWebGL2 = renderer.capabilities.isWebGL2;
+    const glslCompat = `#ifdef GL_ES\n#define texture2D texture\n#define textureCube texture\n#endif\n`;
+    const useGpuCompute = !this.forceFallback && isWebGL2;
+    if(!useGpuCompute){
+      this._initCpuFallback();
+      return;
+    }
     // create render targets for pos and vel (ping-pong)
     this.posRT1 = this._makeRenderTarget();
     this.posRT2 = this._makeRenderTarget();
@@ -71,10 +148,17 @@ export default class ParticlesGPGPU {
     // copy material to initialize RTs
     const copyMat = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null } },
-      vertexShader: `precision highp float; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = c; }`,
+      vertexShader: `${glslCompat}precision highp float; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `${glslCompat}varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = c; }`,
       depthWrite: false
     });
+    // debug: log shader sources when compiled
+    copyMat.__debugName = 'copyMat';
+    copyMat.onBeforeCompile = (shader, renderer)=>{
+      try{ console.groupCollapsed('onBeforeCompile', copyMat.__debugName); console.log('VERTEX:\n', shader.vertexShader); console.log('FRAGMENT:\n', shader.fragmentShader); console.groupEnd(); }catch(e){}
+      copyMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_copyMat', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
     this.copyMesh = new THREE.Mesh(quadGeo, copyMat);
     this.computeScene.add(this.copyMesh);
 
@@ -95,7 +179,7 @@ export default class ParticlesGPGPU {
         uExplode: { value: 0.0 }
       },
       vertexShader: `precision highp float; void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float;
+      fragmentShader: `${glslCompat}precision highp float;
       // fallback sin-based noise (simple & compatible)
       uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uTime; uniform float uDelta; uniform float uNoiseScale; uniform float uCurl; uniform float uDamping; uniform float uBands[6]; uniform float uModeBlend; uniform vec3 uAttractor; uniform float uExplode;
       float snoise(vec3 p){ return sin(p.x*12.9898 + p.y*78.233 + p.z*37.719) * 0.5 + 0.5; }
@@ -137,6 +221,12 @@ export default class ParticlesGPGPU {
         gl_FragColor = vec4(vel, 1.0);
       }`
     });
+    this.velMat.__debugName = 'velMat';
+    this.velMat.onBeforeCompile = (shader, renderer)=>{
+      this.velMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      console.log('onBeforeCompile velMat');
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_velMat', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
 
     // position update shader
     this.posMat = new THREE.ShaderMaterial({
@@ -145,9 +235,15 @@ export default class ParticlesGPGPU {
         uVel: { value: null },
         uDelta: { value: 0.016 }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
-      vertexShader: `precision highp float; void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
+      vertexShader: `${glslCompat}precision highp float; void main(){ gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `${glslCompat}precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
     });
+    this.posMat.__debugName = 'posMat';
+    this.posMat.onBeforeCompile = (shader, renderer)=>{
+      this.posMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      console.log('onBeforeCompile posMat');
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_posMat', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
 
     this.quad = new THREE.Mesh(quadGeo, this.velMat);
     this.computeScene.add(this.quad);
@@ -167,12 +263,11 @@ export default class ParticlesGPGPU {
     this.particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
     this.particleGeo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
 
-    this.particleMat = new THREE.ShaderMaterial({
+    const normalParticleMat = new THREE.ShaderMaterial({
       uniforms: {
         uPosTex: { value: null }, uPointSize: { value: 2.0 }, uColor: { value: new THREE.Color(0x00ffd5) }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
       vertexShader: `precision highp float; uniform sampler2D uPosTex; uniform float uPointSize; uniform vec2 uTexSize; varying vec3 vColor; varying vec3 vNormal; attribute vec2 uv; void main(){ vec4 p = texture2D(uPosTex, uv); vec3 pos = p.xyz; vColor = vec3(0.5+pos.x*0.002, 0.3+pos.y*0.002, 0.6);
-        // approximate normal from neighbor samples in the pos texture using supplied tex size
         vec2 off = vec2(1.0,0.0)/uTexSize;
         vec3 pR = texture2D(uPosTex, uv + off.xy).xyz;
         vec3 pU = texture2D(uPosTex, uv + off.yx).xyz;
@@ -180,26 +275,38 @@ export default class ParticlesGPGPU {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(pos,1.0);
         gl_PointSize = uPointSize * (300.0 / - (modelViewMatrix * vec4(pos,1.0)).z);
       }`,
-      fragmentShader: `precision highp float; varying vec3 vColor; varying vec3 vNormal; void main(){ float d = length(gl_PointCoord - vec2(0.5)); if(d>0.5) discard; // simple lighting
-        vec3 lightDir = normalize(vec3(0.3,0.6,0.8));
-        float diff = max(dot(normalize(vNormal), lightDir), 0.0);
-        vec3 col = vColor * (0.6 + 0.6 * diff);
-        gl_FragColor = vec4(col, 1.0 - d*1.8);
-      }`,
+      fragmentShader: `precision highp float; varying vec3 vColor; varying vec3 vNormal; void main(){ float d = length(gl_PointCoord - vec2(0.5)); if(d>0.5) discard; vec3 lightDir = normalize(vec3(0.3,0.6,0.8)); float diff = max(dot(normalize(vNormal), lightDir), 0.0); vec3 col = vColor * (0.6 + 0.6 * diff); gl_FragColor = vec4(col, 1.0 - d*1.8); }`,
       transparent: true
     });
+    normalParticleMat.__debugName = 'particleMat';
+    normalParticleMat.onBeforeCompile = (shader, renderer)=>{
+      normalParticleMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      console.log('onBeforeCompile particleMat');
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_particleMat', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
 
-    // If WebGL2 is not available, vertex texture fetch may be unsupported.
-    // Provide a WebGL1-safe fallback particle material that does not sample textures in the vertex shader.
-    if(!renderer.capabilities.isWebGL2){
-      this.particleMat = new THREE.ShaderMaterial({
-        uniforms: { uPointSize:{ value:2.0 }, uColor:{ value: new THREE.Color(0x00ffd5) }, uTime:{ value:0.0 } },
-        vertexShader: `precision highp float; uniform float uPointSize; uniform float uTime; varying vec3 vColor; varying vec3 vNormal; attribute vec2 uv; void main(){ vec2 p = uv - 0.5; float z = sin((uv.x + uv.y) * 12.0 + uTime * 2.0) * 30.0; vec3 pos = vec3(p.x * 400.0, p.y * 400.0, z); vColor = vec3(0.5 + p.x*0.5, 0.3 + p.y*0.5, 0.6); vNormal = vec3(0.0,0.0,1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(pos,1.0); gl_PointSize = uPointSize * (300.0 / - (modelViewMatrix * vec4(pos,1.0)).z); }`,
-        fragmentShader: `precision highp float; varying vec3 vColor; varying vec3 vNormal; void main(){ float d = length(gl_PointCoord - vec2(0.5)); if(d>0.5) discard; vec3 lightDir = normalize(vec3(0.3,0.6,0.8)); float diff = max(dot(normalize(vNormal), lightDir), 0.0); vec3 col = vColor * (0.6 + 0.6 * diff); gl_FragColor = vec4(col, 1.0 - d*1.8); }`,
-        transparent: true
-      });
-    }
+    const fallbackParticleMat = new THREE.ShaderMaterial({
+      uniforms: { uPosTex: { value: null }, uPointSize:{ value:2.0 }, uColor:{ value: new THREE.Color(0x00ffd5) }, uTime:{ value:0.0 } },
+      vertexShader: `precision highp float; uniform float uPointSize; uniform float uTime; varying vec3 vColor; attribute vec2 uv; void main(){ vec2 p = uv - 0.5; float z = sin((uv.x + uv.y) * 12.0 + uTime * 2.0) * 30.0; vec3 pos = vec3(p.x * 400.0, p.y * 400.0, z); vColor = vec3(0.5 + p.x*0.5, 0.3 + p.y*0.5, 0.6); gl_Position = projectionMatrix * modelViewMatrix * vec4(pos,1.0); gl_PointSize = uPointSize * 2.0; }`,
+      fragmentShader: `precision highp float; varying vec3 vColor; void main(){ float d = length(gl_PointCoord - vec2(0.5)); if(d>0.5) discard; vec3 col = vColor; gl_FragColor = vec4(col, 1.0 - d*1.8); }`,
+      transparent: true
+    });
+    fallbackParticleMat.__debugName = 'particleMat_fallback';
+    fallbackParticleMat.onBeforeCompile = (shader, renderer)=>{
+      fallbackParticleMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      console.log('onBeforeCompile particleMat_fallback');
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_particleMat_fallback', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
+
+    const forceFallback = this.forceFallback || ((typeof window !== 'undefined' && window.__NEWFLARE_forceFallback) ? true : false);
+    this.particleMat = (forceFallback || !renderer.capabilities.isWebGL2) ? fallbackParticleMat : normalParticleMat;
+    this.particleMatFallback = fallbackParticleMat;
+    this.particleMatNormal = normalParticleMat;
     this.particlesMesh = new THREE.Points(this.particleGeo, this.particleMat);
+    if(forceFallback){
+      console.warn('NEWFLARE: forcing WebGL1-safe particle fallback material');
+      try{ window.__NEWFLARE_appendLog('INFO', 'Forcing particle fallback material due to compatibility issues'); }catch(e){}
+    }
 
     // --- Trails: render particles into a current frame RT and composite with previous trail ---
     this.currentFrameRT = this._makeRenderTarget();
@@ -212,11 +319,17 @@ export default class ParticlesGPGPU {
       uniforms: {
         uPrev: { value: null }, uCurr: { value: null }, uDecay: { value: 0.96 }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
-      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; uniform vec2 uTexSize; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 prev = texture2D(uPrev, uv) * uDecay; vec4 cur = texture2D(uCurr, uv); // additive blend
+      vertexShader: `${glslCompat}void main(){ gl_Position = vec4(position,1.0); }`,
+      fragmentShader: `${glslCompat}precision highp float; uniform sampler2D uPrev; uniform sampler2D uCurr; uniform float uDecay; uniform vec2 uTexSize; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 prev = texture2D(uPrev, uv) * uDecay; vec4 cur = texture2D(uCurr, uv); // additive blend
         vec4 outc = prev + cur; outc = clamp(outc, 0.0, 1.0); gl_FragColor = outc; }`,
       depthWrite: false
     });
+    this.trailCompositeMat.__debugName = 'trailCompositeMat';
+    this.trailCompositeMat.onBeforeCompile = (shader, renderer)=>{
+      this.trailCompositeMat.__lastShader = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+      console.log('onBeforeCompile trailCompositeMat');
+      try{ window.__NEWFLARE_appendLog('SHADER_SOURCE_trailCompositeMat', 'VERTEX:\n' + shader.vertexShader + '\nFRAGMENT:\n' + shader.fragmentShader); }catch(e){}
+    };
 
     this.trailQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), this.trailCompositeMat);
     this.computeScene.add(this.trailQuad);
@@ -239,8 +352,10 @@ export default class ParticlesGPGPU {
     this.copyMesh.material = copyMat;
     this.copyMesh.material.uniforms.uTexture.value = posInitTex;
     renderer.setRenderTarget(this.posRT1); renderer.render(this.computeScene, this.computeCamera);
+    this._checkGLError(renderer, 'init.copy.posRT1');
     this.copyMesh.material.uniforms.uTexture.value = velInitTex;
     renderer.setRenderTarget(this.velRT1); renderer.render(this.computeScene, this.computeCamera);
+    this._checkGLError(renderer, 'init.copy.velRT1');
     renderer.setRenderTarget(null);
 
     // set current RT pointers
@@ -248,10 +363,85 @@ export default class ParticlesGPGPU {
     this.velRead = this.velRT1; this.velWrite = this.velRT2;
 
     this.initDone = true;
+    // expose quick dump helper
+    try{ window.__NEWFLARE_dumpShaders = ()=>{
+      console.log('velMat', this.velMat && this.velMat.__lastShader);
+      console.log('posMat', this.posMat && this.posMat.__lastShader);
+      console.log('particleMat', this.particleMat && this.particleMat.__lastShader);
+      console.log('trailCompositeMat', this.trailCompositeMat && this.trailCompositeMat.__lastShader);
+      console.log('copyMat', this.copyMesh && this.copyMesh.material && this.copyMesh.material.__lastShader);
+    }; }catch(e){}
+  }
+
+  // helper: check GL error and log useful debug data
+  _checkGLError(renderer, label){
+    try{
+      const gl = renderer.getContext();
+      const err = gl.getError();
+      if(err !== gl.NO_ERROR){
+        console.error('WebGL GL_ERROR after', label, err);
+        // dump last compiled shader snippets for quick inspection
+        try{ console.log('VEL MAT last shader', this.velMat && this.velMat.__lastShader); }catch(e){}
+        try{ console.log('POS MAT last shader', this.posMat && this.posMat.__lastShader); }catch(e){}
+        try{ console.log('PARTICLE MAT last shader', this.particleMat && this.particleMat.__lastShader); }catch(e){}
+        try{ console.log('COPY MAT last shader', this.copyMesh && this.copyMesh.material && this.copyMesh.material.__lastShader); }catch(e){}
+        // mark broken so we can bail out of step()
+        this._broken = true;
+        return false;
+      }
+    }catch(e){ console.warn('checkGLError failed', e); }
+    return true;
   }
 
   step(time, delta, bands){
     if(!this.initDone) return;
+    if(this.simpleFallback){
+      const positions = this.cpuPositions;
+      const velocities = this.cpuVelocities;
+      const count = this.cpuCount;
+      const attractX = Math.sin(time * 0.7) * 50.0;
+      const attractY = Math.cos(time * 0.5) * 30.0;
+      const attractZ = Math.sin(time * 0.3) * 40.0;
+      const damp = 0.96;
+      for(let i=0;i<count;i++){
+        const idx = i * 3;
+        let px = positions[idx];
+        let py = positions[idx + 1];
+        let pz = positions[idx + 2];
+        let vx = velocities[idx];
+        let vy = velocities[idx + 1];
+        let vz = velocities[idx + 2];
+        const dx = attractX - px;
+        const dy = attractY - py;
+        const dz = attractZ - pz;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 1e-5;
+        const force = 1.5 / (dist * 0.15);
+        vx += dx / dist * force * delta * 60.0;
+        vy += dy / dist * force * delta * 60.0;
+        vz += dz / dist * force * delta * 60.0;
+        const noise = Math.sin((px + py + pz + time) * 0.5) * 0.12;
+        vx += noise * delta * 20.0;
+        vy += noise * delta * 20.0;
+        vz += noise * delta * 20.0;
+        vx *= damp;
+        vy *= damp;
+        vz *= damp;
+        px += vx * delta * 60.0;
+        py += vy * delta * 60.0;
+        pz += vz * delta * 60.0;
+        positions[idx] = px;
+        positions[idx + 1] = py;
+        positions[idx + 2] = pz;
+        velocities[idx] = vx;
+        velocities[idx + 1] = vy;
+        velocities[idx + 2] = vz;
+      }
+      this.cpuGeometry.attributes.position.needsUpdate = true;
+      if(this.particleMat.uniforms && this.particleMat.uniforms.uTime){
+        this.particleMat.uniforms.uTime.value = time;
+      }
+      return;
+    }
     const renderer = this.renderer;
     // advance mode blend
     if(this.mode !== this.targetMode){
@@ -286,6 +476,7 @@ export default class ParticlesGPGPU {
     this.quad.material = this.velMat;
     renderer.setRenderTarget(this.velWrite);
     renderer.render(this.computeScene, this.computeCamera);
+    if(!this._checkGLError(renderer, 'velWrite')) return;
 
     // update position
     this.posMat.uniforms.uPos.value = this.posRead.texture;
@@ -294,6 +485,7 @@ export default class ParticlesGPGPU {
     this.quad.material = this.posMat;
     renderer.setRenderTarget(this.posWrite);
     renderer.render(this.computeScene, this.computeCamera);
+    if(!this._checkGLError(renderer, 'posWrite')) return;
 
     renderer.setRenderTarget(null);
 
@@ -316,6 +508,7 @@ export default class ParticlesGPGPU {
     const tmpScene = new THREE.Scene();
     tmpScene.add(this.particlesMesh);
     renderer.render(tmpScene, this.computeCamera);
+    if(!this._checkGLError(renderer, 'render.particles.currentFrame')) return;
     // cleanup
     renderer.setRenderTarget(null);
 
@@ -326,6 +519,7 @@ export default class ParticlesGPGPU {
     this.trailQuad.material = this.trailCompositeMat;
     renderer.setRenderTarget(this.trailWrite);
     renderer.render(this.computeScene, this.computeCamera);
+    if(!this._checkGLError(renderer, 'trailComposite')) return;
     renderer.setRenderTarget(null);
 
     // swap trail RTs
