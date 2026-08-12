@@ -82,10 +82,26 @@ function bindUI(){
   });
 
   document.getElementById('startVisualBtn').addEventListener('click', ()=>{
-    renderer.start((time)=>{
-      const features = analyzer.getFeatures();
-      renderer.update(time, features);
-    });
+    (async ()=>{
+      console.log('Start Visual clicked');
+      try{
+        // Ensure AudioContext resumed on user gesture
+        try{ await audioManager.getAudioContext().resume(); }catch(e){ console.warn('AudioContext resume warning', e); }
+
+        renderer.start((time, dt)=>{
+          try{
+            const features = analyzer.getFeatures();
+            renderer.update(time, features);
+          }catch(err){
+            console.error('Render callback error', err);
+          }
+        });
+        hideOverlay();
+      }catch(err){
+        console.error('Failed to start renderer', err);
+        showOverlay('Error iniciant visual: '+(err.message||err));
+      }
+    })();
   });
 
   document.getElementById('recBtn').addEventListener('click', async (e)=>{
