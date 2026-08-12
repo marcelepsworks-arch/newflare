@@ -6,6 +6,7 @@ import PostFX from './PostFX.js';
 import BackgroundLayer from './BackgroundLayer.js';
 import PresetManager, { PALETTES, SHAPES } from './Presets.js';
 import Director, { SHOTS } from './Director.js';
+import Expression from './Expression.js';
 import { GUI } from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18.0/dist/lil-gui.esm.min.js';
 
 const SHAPE_NAMES = Object.keys(SHAPES);
@@ -59,6 +60,7 @@ export default class Renderer {
 
     this._hue = 0;
     this._mix = 0;
+    this.expression = new Expression();
     // layout state is interpolated: bodies drift to their new places instead of teleporting
     this._layout = { split: 0, offsetA: [0,0,0], offsetB: [0,0,0], scaleRatio: 1 };
     this._layoutTarget = { split: 0, offsetA: [0,0,0], offsetB: [0,0,0], scaleRatio: 1 };
@@ -323,6 +325,15 @@ export default class Renderer {
 
     this.particlesSystem.step(time, dt, bands);
     this.presetManager.step(dt);
+
+    // scale the preset by how the music is actually being played this instant
+    this.expression.update(features, dt);
+    const ex = this.expression.apply(this.presetManager.current);
+    this.particlesSystem.setParams(ex);
+    if(this.shards) this.shards.setParams(ex);
+    this.postfx.setParams(ex);
+    this.background.setParams(ex);
+    this._expr = ex;
     this._stepPalette(dt, features);
     this._stepLayout(dt);
     this._stepPointer(dt);
@@ -336,12 +347,12 @@ export default class Renderer {
       // one full A->B->A sweep every 8 beats
       this._morphPhase = ((features.beatCount % 8) + features.beatPhase) / 8 * Math.PI * 2;
     } else {
-      this._morphPhase += dt * speed;
+      this._morphPhase += dt * speed * (this._expr ? this._expr.morphScale : 1);
     }
     const base = this.presetManager.current.shapeMix || 0;
     const mix = Math.min(1, Math.max(0, base + 0.5 + 0.5 * Math.sin(this._morphPhase)));
     this._mix = mix;
-    const deform = (this.presetManager.current.audioDeform || 0) * (0.45 + this._energy * 0.7 + this._pulse * 0.8);
+    const deform = (this._expr ? this._expr.audioDeform : 0) * (0.6 + this._pulse * 0.7);
     this.particlesSystem.setParams({ shapeMix: mix, audioDeform: deform });
     if(this.raymarch) this.raymarch.setShape({ shapeMix: mix, audioDeform: deform });
 
@@ -362,7 +373,7 @@ export default class Renderer {
     shot.spin = lerp(shot.spin, target.spin, k);
     shot.bob = lerp(shot.bob, target.bob, k);
 
-    this._camAngle += shot.spin * dt;
+    this._camAngle += shot.spin * (this._expr ? this._expr.camSpinScale : 1) * dt;
     // the beat pulse pushes the camera in slightly, which sells the hit
     const dist = Math.max(120, shot.dist + (this._userDist || 0)) * (1.0 - this._energy * 0.08 - this._pulse * 0.05);
     this.camera.position.set(

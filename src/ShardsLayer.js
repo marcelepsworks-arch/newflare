@@ -2,12 +2,16 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.m
 import { PALETTE, MATERIAL } from './ShaderChunks.js';
 
 const BASE_GEOMETRIES = {
-  icosa: () => new THREE.IcosahedronGeometry(1, 0),
-  tetra: () => new THREE.TetrahedronGeometry(1.25, 0),
-  box:   () => new THREE.BoxGeometry(1.4, 1.4, 1.4),
-  octa:  () => new THREE.OctahedronGeometry(1.2, 0),
-  blade: () => new THREE.ConeGeometry(0.6, 2.6, 4)
+  icosa:  () => new THREE.IcosahedronGeometry(1, 0),
+  tetra:  () => new THREE.TetrahedronGeometry(1.25, 0),
+  box:    () => new THREE.BoxGeometry(1.4, 1.4, 1.4),
+  octa:   () => new THREE.OctahedronGeometry(1.2, 0),
+  blade:  () => new THREE.ConeGeometry(0.6, 2.6, 4),
+  dodeca: () => new THREE.DodecahedronGeometry(1.05, 0),
+  ring:   () => new THREE.TorusGeometry(0.85, 0.28, 6, 10),
+  rod:    () => new THREE.CylinderGeometry(0.3, 0.3, 2.2, 6)
 };
+const SHAPE_NAMES = Object.keys(BASE_GEOMETRIES);
 
 // Solid instanced geometry advected by the GPGPU simulation. Same motion field as the
 // particles, but real filled polyhedra with shading — the shapes layer, not points.
@@ -15,8 +19,7 @@ export default class ShardsLayer {
   constructor(options = {}){
     this.count = options.count || 3000;
     this.shape = options.shape || 'icosa';
-    this.geometries = {};
-    this.mesh = null;
+    this.group = null;
   }
 
   init(texWidth, texHeight){
@@ -34,8 +37,8 @@ export default class ShardsLayer {
       refs[i*2+1] = (y + 0.5) / texHeight;
       seeds[i] = Math.random();
     }
-    this.refs = new THREE.InstancedBufferAttribute(refs, 2);
-    this.seeds = new THREE.InstancedBufferAttribute(seeds, 1);
+    this.refsData = refs;
+    this.seedsData = seeds;
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
@@ -121,37 +124,53 @@ export default class ShardsLayer {
       side: THREE.DoubleSide
     });
 
-    this.setShape(this.shape);
-    return this.mesh;
+    this.group = new THREE.Group();
+    this._buildGroup();
+    return this.group;
   }
 
-  _buildGeometry(name){
-    if(!this.geometries[name]){
-      const base = (BASE_GEOMETRIES[name] || BASE_GEOMETRIES.icosa)();
+  // One instanced mesh per base geometry, each owning a slice of the instances. A single
+  // InstancedMesh can only ever draw one shape, so mixing them means splitting the batch.
+  _buildGroup(){
+    this.group.clear();
+    this.meshes = [];
+    const names = SHAPE_NAMES;
+    // the preset's shape stays dominant, the rest fill in the variety
+    const weights = names.map(n => (n === this.shape ? 3 : 1));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+    let offset = 0;
+    names.forEach((name, i) => {
+      const share = i === names.length - 1
+        ? this.count - offset
+        : Math.floor(this.count * weights[i] / totalWeight);
+      if(share <= 0) return;
+
+      const base = BASE_GEOMETRIES[name]();
       const geo = new THREE.InstancedBufferGeometry();
       geo.index = base.index;
       geo.setAttribute('position', base.attributes.position);
       geo.setAttribute('normal', base.attributes.normal);
       geo.setAttribute('uv', base.attributes.uv);
-      geo.setAttribute('aRef', this.refs);
-      geo.setAttribute('aSeed', this.seeds);
-      geo.instanceCount = this.count;
+      geo.setAttribute('aRef', new THREE.InstancedBufferAttribute(this.refsData.subarray(offset * 2, (offset + share) * 2), 2));
+      geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(this.seedsData.subarray(offset, offset + share), 1));
+      geo.instanceCount = share;
       geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 4000);
-      this.geometries[name] = geo;
-    }
-    return this.geometries[name];
+
+      const mesh = new THREE.Mesh(geo, this.material);
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      this.meshes.push({ mesh, geo, share });
+      offset += share;
+    });
   }
 
+  // changes which shape dominates the mix; the others stay present for variety
   setShape(name){
     if(!BASE_GEOMETRIES[name]) name = 'icosa';
+    if(name === this.shape || !this.group) { this.shape = name; return; }
     this.shape = name;
-    const geo = this._buildGeometry(name);
-    if(!this.mesh){
-      this.mesh = new THREE.Mesh(geo, this.material);
-      this.mesh.frustumCulled = false;
-    } else {
-      this.mesh.geometry = geo;
-    }
+    this._buildGroup();
   }
 
   setParams(p = {}){
@@ -160,9 +179,9 @@ export default class ShardsLayer {
     if(typeof p.shardOpacity !== 'undefined') u.uOpacity.value = p.shardOpacity;
     if(typeof p.metal !== 'undefined') u.uMetal.value = p.metal;
     if(typeof p.irid !== 'undefined') u.uIrid.value = p.irid;
-    if(typeof p.shardCount !== 'undefined'){
-      const geo = this.mesh && this.mesh.geometry;
-      if(geo) geo.instanceCount = Math.max(0, Math.min(this.count, Math.round(p.shardCount)));
+    if(typeof p.shardCount !== 'undefined' && this.meshes){
+      const frac = Math.max(0, Math.min(1, p.shardCount / this.count));
+      for(const m of this.meshes) m.geo.instanceCount = Math.round(m.share * frac);
     }
     if(p.shardShape && p.shardShape !== this.shape) this.setShape(p.shardShape);
     if(p.palette) this.setPalette(p.palette);

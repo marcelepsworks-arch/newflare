@@ -23,6 +23,15 @@ export default class AudioAnalyzer {
     this.peakDecay = 0.9995;
     this.peakFloor = 0.04;
 
+    // descriptors of musical *texture* rather than level: how many things are sounding,
+    // how tonal or noisy they are, and how often events arrive
+    this.onsetTimes = [];
+    this.flatness = 0;
+    this.activity = 0;
+    this.density = 0;
+    this.complexity = 0;
+    this.crest = 0;
+
     // spectral flux / onset detection state
     this.prevSpectrum = new Float32Array(this.analyser.frequencyBinCount);
     this.spectralFlux = 0;
@@ -45,6 +54,11 @@ export default class AudioAnalyzer {
   }
 
   update(){
+    // Signal presence gate. Spectral flatness describes the *shape* of the spectrum, so a
+    // silent noise floor is perfectly flat and scores as maximally dense. Every texture
+    // descriptor has to be gated by whether anything is actually sounding.
+    const presence = Math.max(0, Math.min(1, (this.rms - 0.0015) / 0.02));
+
     // frequency-domain
     this.analyser.getFloatFrequencyData(this.freqData);
     // convert to linear magnitudes in range 0..1
@@ -93,7 +107,11 @@ export default class AudioAnalyzer {
     // onset detection with simple cooldown
     let onset = false; let confidence = 0;
     if(this.onsetCooldown>0) this.onsetCooldown--;
-    if(flux > threshold && this.onsetCooldown===0){
+    // A sustained note has almost no flux variance, so std collapses and the adaptive
+    // threshold alone fires on micro-fluctuations. Requiring a real jump above the running
+    // mean keeps steady tones from reading as a stream of hits.
+    const isTransient = flux > mean * 1.55 && flux > 4e-4;
+    if(flux > threshold && isTransient && this.onsetCooldown===0 && presence > 0.12){
       onset = true;
       confidence = Math.min(1, (flux - threshold) / (std + 1e-6));
       this.onsetCooldown = 6; // frames to ignore (reduce repeats)
@@ -113,6 +131,42 @@ export default class AudioAnalyzer {
 
     // save prev spectrum for next frame
     this.prevSpectrum.set(mags);
+
+    // --- musical texture ---------------------------------------------------
+    // Spectral flatness (Wiener entropy): a lone tonal instrument concentrates energy in
+    // few bins and scores low; a dense arrangement spreads it out and scores high.
+    let logSum = 0, arithSum = 0, bins = 0;
+    const hiBin = Math.min(mags.length, this._getFreqIndex(12000));
+    for(let i = this._getFreqIndex(40); i < hiBin; i++){
+      const m = mags[i] + 1e-6;
+      logSum += Math.log(m); arithSum += m; bins++;
+    }
+    const flatness = bins ? Math.exp(logSum / bins) / (arithSum / bins + 1e-9) : 0;
+    this.flatness += (flatness * presence - this.flatness) * 0.05;
+
+    // how many bands carry real energy at once — one instrument lights up one or two
+    let activeBands = 0;
+    for(let b = 0; b < bandVals.length; b++) if(bandVals[b] > 0.28) activeBands++;
+    this.activity += ((activeBands / bandVals.length) * presence - this.activity) * 0.05;
+
+    // event density over a 4 s window: sparse hits vs a continuous stream
+    const nowSec = this.audioContext.currentTime;
+    if(onset) this.onsetTimes.push(nowSec);
+    while(this.onsetTimes.length && nowSec - this.onsetTimes[0] > 4) this.onsetTimes.shift();
+    const targetDensity = Math.min(1, (this.onsetTimes.length / 4) / 6);
+    this.density += (targetDensity - this.density) * 0.05;
+
+    // crest factor: isolated hits stand tall over the average, a wall of sound does not
+    let meanE = 0; for(const v of this.energyHistory) meanE += v;
+    meanE /= this.energyHistory.length;
+    this.crest += (Math.min(1, (rms / (meanE + 1e-6) - 1) * 0.7) - this.crest) * 0.1;
+
+    // one number for "how much is going on musically"
+    this.complexity = Math.min(1, presence * (
+      this.activity * 0.45 +
+      Math.min(1, this.flatness / 0.32) * 0.35 +
+      this.density * 0.20
+    ));
 
     // spectral tilt: -1 = bass dominated, +1 = treble dominated. Drives colour and the
     // kind of shape the director reaches for, so the visuals track the *character* of the
@@ -135,7 +189,13 @@ export default class AudioAnalyzer {
       rms: this.rms,
       energyNorm: this.rms / (this.maxEnergy + 1e-9),
       spectralTilt,
-      midRatio
+      midRatio,
+      flatness: this.flatness,
+      activity: this.activity,
+      density: this.density,
+      crest: Math.max(0, this.crest),
+      complexity: this.complexity,
+      presence
     }, beat);
   }
 
@@ -145,8 +205,13 @@ export default class AudioAnalyzer {
     return res.bands;
   }
 
-  // full features
+  // Full features. update() advances the flux history and onset state, so two callers in
+  // the same frame would each see half the stream; the result is cached per audio frame.
   getFeatures(){
-    return this.update();
+    const now = this.audioContext.currentTime;
+    if(this._cache && now === this._cacheTime) return this._cache;
+    this._cacheTime = now;
+    this._cache = this.update();
+    return this._cache;
   }
 }

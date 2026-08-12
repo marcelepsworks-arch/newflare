@@ -324,10 +324,11 @@ export default class ParticlesGPGPU {
         uniform sampler2D uPosTex; uniform sampler2D uVelTex;
         uniform float uPointSize, uTime;
         uniform vec3 uPalA, uPalB, uPalC, uPalD;
-        varying vec3 vColor; varying float vFade;
+        varying vec3 vColor; varying float vFade; varying float vSeed;
         ${PALETTE}
         void main(){
           vec4 p = texture2D(uPosTex, uv);
+          vSeed = p.w;
           vec3 vel = texture2D(uVelTex, uv).xyz;
           float speed = length(vel);
           vColor = cosPalette(p.w * 0.6 + speed * 0.05 + uTime * 0.02, uPalA, uPalB, uPalC, uPalD);
@@ -338,11 +339,35 @@ export default class ParticlesGPGPU {
           vFade = clamp(1.0 - (-mv.z - 120.0) / 700.0, 0.12, 1.0);
         }`,
       fragmentShader: `precision highp float;
-        varying vec3 vColor; varying float vFade; uniform float uOpacity;
+        varying vec3 vColor; varying float vFade; varying float vSeed; uniform float uOpacity;
+
+        // Every particle picks its own sprite silhouette from its seed, so the cloud is
+        // not a field of identical dots. The seed also sets a fixed rotation.
+        float sprite(vec2 q, float seed){
+          float ang = seed * 31.4;
+          float c = cos(ang), sn = sin(ang);
+          q = mat2(c, -sn, sn, c) * q;
+          float r = length(q);
+          float k = floor(seed * 6.0);
+          if(k < 1.0) return smoothstep(0.50, 0.05, r);                                  // soft dot
+          if(k < 2.0) return smoothstep(0.46, 0.38, max(abs(q.x), abs(q.y)));            // square
+          if(k < 3.0){                                                                    // triangle
+            float t = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y);
+            return smoothstep(0.34, 0.26, t);
+          }
+          if(k < 4.0) return smoothstep(0.07, 0.0, abs(r - 0.34));                        // ring
+          if(k < 5.0){                                                                    // star
+            float a = atan(q.y, q.x);
+            return smoothstep(0.0, -0.08, r - 0.42 * (0.55 + 0.45 * cos(a * 5.0)));
+          }
+          return smoothstep(0.30, 0.22, min(abs(q.x), abs(q.y)) + r * 0.25);              // cross
+        }
+
         void main(){
-          float d = length(gl_PointCoord - vec2(0.5));
-          if(d > 0.5) discard;
-          float a = smoothstep(0.5, 0.05, d) * vFade * uOpacity;
+          vec2 q = gl_PointCoord - vec2(0.5);
+          float mask = sprite(q, vSeed);
+          if(mask <= 0.01) discard;
+          float a = mask * vFade * uOpacity;
           gl_FragColor = vec4(vColor * a, a);
         }`,
       transparent: true,
