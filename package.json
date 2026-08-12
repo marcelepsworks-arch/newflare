@@ -1,0 +1,13 @@
+{
+  "name": "newflare",
+  "version": "0.1.0",
+  "description": "Newflare — Audio-reactive visualizer prototype",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "serve:npx": "npx serve . -l 3000",
+    "serve:python": "python -m http.server 3000"
+  },
+  "author": "",
+  "license": "MIT"
+}

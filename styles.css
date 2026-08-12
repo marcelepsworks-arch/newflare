@@ -1,0 +1,16 @@
+:root{--bg:#0b0b0e;--panel:rgba(255,255,255,0.04);--muted:#9aa0a6;--accent:#00ffd5}
+html,body,#app{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+.app-dark{background:linear-gradient(180deg,#050506 0%, #0b0b0e 100%);color:#e6eef5}
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;backdrop-filter:blur(6px);background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-bottom:1px solid rgba(255,255,255,0.03)}
+/* ensure UI is above canvas */
+.topbar, .footer, #overlayGui { z-index: 1000; position:relative }
+.stage { z-index: 0 }
+#glCanvas { position: absolute; top:56px; left:0; right:0; bottom:30px; width: auto; height: auto }
+.brand{font-weight:700;letter-spacing:1px}
+.controls > *{margin-left:8px}
+.stage{position:fixed;inset:56px 0 30px 0;display:flex;align-items:center;justify-content:center}
+#glCanvas{width:100%;height:100%;display:block}
+.footer{position:fixed;bottom:0;left:0;right:0;height:30px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px}
+button{background:var(--panel);border:1px solid rgba(255,255,255,0.03);color:inherit;padding:8px 10px;border-radius:6px}
+button.rec{background:linear-gradient(120deg,#ff4b4b,#ff1f6a);color:white}
+input[type=file]{color:var(--muted)}
