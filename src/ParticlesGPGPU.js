@@ -71,7 +71,7 @@ export default class ParticlesGPGPU {
     // copy material to initialize RTs
     const copyMat = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
+      vertexShader: `precision highp float; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
       fragmentShader: `varying vec2 vUv; uniform sampler2D uTexture; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = c; }`,
       depthWrite: false
     });
@@ -94,7 +94,7 @@ export default class ParticlesGPGPU {
         uAttractor: { value: new THREE.Vector3(0.0,0.0,0.0) },
         uExplode: { value: 0.0 }
       },
-      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
+      vertexShader: `precision highp float; void main(){ gl_Position = vec4(position,1.0); }`,
       fragmentShader: `precision highp float;
       // fallback sin-based noise (simple & compatible)
       uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uTime; uniform float uDelta; uniform float uNoiseScale; uniform float uCurl; uniform float uDamping; uniform float uBands[6]; uniform float uModeBlend; uniform vec3 uAttractor; uniform float uExplode;
@@ -145,7 +145,7 @@ export default class ParticlesGPGPU {
         uVel: { value: null },
         uDelta: { value: 0.016 }, uTexSize: { value: new THREE.Vector2(this.texWidth, this.texHeight) }
       },
-      vertexShader: `void main(){ gl_Position = vec4(position,1.0); }`,
+      vertexShader: `precision highp float; void main(){ gl_Position = vec4(position,1.0); }`,
       fragmentShader: `precision highp float; uniform sampler2D uPos; uniform sampler2D uVel; uniform vec2 uTexSize; uniform float uDelta; void main(){ vec2 uv = gl_FragCoord.xy / uTexSize; vec4 p = texture2D(uPos, uv); vec4 v = texture2D(uVel, uv); vec3 pos = p.xyz + v.xyz * uDelta * 60.0; gl_FragColor = vec4(pos,1.0); }`
     });
 

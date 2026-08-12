@@ -42,7 +42,7 @@ export default class Renderer {
     const quadGeo = new THREE.PlaneGeometry(2,2);
     this.overlayMat = new THREE.ShaderMaterial({
       uniforms: { uTexture: { value: null }, uOpacity: { value: 1.0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
+      vertexShader: `precision highp float; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position,1.0); }`,
       fragmentShader: `precision highp float; varying vec2 vUv; uniform sampler2D uTexture; uniform float uOpacity; void main(){ vec4 c = texture2D(uTexture, vUv); gl_FragColor = vec4(c.rgb, c.a * uOpacity); }`,
       transparent: true, depthWrite:false
     });
