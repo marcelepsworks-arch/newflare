@@ -5,9 +5,15 @@ const PALETTE_NAMES = Object.keys(PALETTES);
 // Shapes grouped by the kind of sound they suit. Bass-heavy passages pull toward big
 // soft bodies, treble-heavy ones toward hard angular geometry, mids toward structures.
 const SHAPE_POOLS = {
-  low:  [SHAPES.meta, SHAPES.organic, SHAPES.jelly, SHAPES.coral, SHAPES.bloom, SHAPES.sphere, SHAPES.shell],
-  mid:  [SHAPES.torus, SHAPES.helix, SHAPES.gyroid, SHAPES.spring, SHAPES.lattice, SHAPES.wave, SHAPES.twist, SHAPES.ripple],
-  high: [SHAPES.box, SHAPES.octaStar, SHAPES.menger, SHAPES.cross, SHAPES.pyramid, SHAPES.knot, SHAPES.cage, SHAPES.apollonian, SHAPES.mandelbulb]
+  // bass sits with heavy soft bodies and the fleshier alien forms
+  low:  [SHAPES.meta, SHAPES.organic, SHAPES.jelly, SHAPES.coral, SHAPES.bloom, SHAPES.sphere,
+         SHAPES.shell, SHAPES.xenoPod, SHAPES.spore, SHAPES.hive],
+  // mids with structures that have a direction to follow
+  mid:  [SHAPES.torus, SHAPES.helix, SHAPES.gyroid, SHAPES.spring, SHAPES.lattice, SHAPES.wave,
+         SHAPES.twist, SHAPES.ripple, SHAPES.tendrils, SHAPES.membrane],
+  // treble with hard edges and fine detail
+  high: [SHAPES.box, SHAPES.octaStar, SHAPES.menger, SHAPES.cross, SHAPES.pyramid, SHAPES.knot,
+         SHAPES.cage, SHAPES.apollonian, SHAPES.mandelbulb, SHAPES.carapace]
 };
 
 // Camera setups. Changing the shot is what stops a scene from reading as one long

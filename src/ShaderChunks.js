@@ -236,6 +236,66 @@ float sdCage(vec3 p){
   return max(shell - 0.05, -(max(abs(p.x), max(abs(p.y), abs(p.z))) - 0.62));
 }
 
+
+// --- alien bodies ---------------------------------------------------------
+// Designed as creatures rather than as formulae: ribbed pods, reaching limbs,
+// segmented shells. What makes them read as alive is asymmetry and taper, so each
+// one varies its radius along an axis instead of being a modulated sphere.
+
+// ribbed seed pod, tapered at both ends
+float sdXenoPod(vec3 p){
+  vec3 q = vec3(p.x, p.y * 0.60, p.z);
+  float ang = atan(q.z, q.x);
+  float rib = 0.05 * sin(ang * 11.0) * (1.0 - min(abs(p.y), 1.0));
+  float taper = 1.0 - 0.32 * p.y * p.y;
+  return (length(q) - (0.74 + rib) * taper) * 0.85;
+}
+
+// a core with limbs reaching outward, repeated around the vertical axis
+float sdTendrils(vec3 p){
+  float core = length(p) - 0.40;
+  const float k = 6.28318530 / 6.0;
+  float ang = atan(p.z, p.x);
+  float a = mod(ang + k * 0.5, k) - k * 0.5;
+  float r = length(p.xz);
+  vec3 q = vec3(cos(a) * r, p.y, sin(a) * r);
+  float curve = sin(q.x * 2.4) * 0.30;
+  float arm = length(vec2(q.z, q.y - curve)) - max(0.15 - q.x * 0.09, 0.03);
+  arm = max(arm, -q.x);            // outward only
+  arm = max(arm, q.x - 1.05);      // finite reach
+  return smin(core, arm, 0.20);
+}
+
+// segmented exoskeleton: a hollow shell with growth ridges
+float sdCarapace(vec3 p){
+  vec3 q = vec3(p.x, p.y * 1.30, p.z);
+  float r = length(q);
+  float ridge = abs(sin(p.y * 7.0 + p.x * 1.4)) * 0.055;
+  return max(r - 0.94 - ridge, -(r - 0.74));
+}
+
+// spore case bristling with spines
+float sdSpore(vec3 p){
+  float r = length(p);
+  vec3 d = r > 1e-5 ? p / r : vec3(0.0, 1.0, 0.0);
+  float spines = max(sin(d.x * 7.0) * sin(d.y * 7.0) * sin(d.z * 7.0), 0.0);
+  return (r - (0.66 + 0.32 * spines)) * 0.75;
+}
+
+// folded membrane suspended inside a shell
+float sdMembrane(vec3 p){
+  float fold = sin(p.x * 2.6 + p.z * 1.9) * 0.30 + cos(p.z * 3.1) * 0.16;
+  float sheet = abs(p.y - fold) - 0.05;
+  return max(sheet, length(p) - 1.02);
+}
+
+// hollow cells packed inside a body
+float sdHive(vec3 p){
+  vec3 c = mod(p * 2.6 + 1.3, 2.6) - 1.3;
+  float cells = (length(c) - 0.60) / 2.6;
+  return max(length(p) - 0.98, -cells);
+}
+
 // id is a uniform (uniform control flow), so the branch is free on every GPU we target
 float sdShape(vec3 p, float id){
   if(id < 0.5) return sdSphere(p);
@@ -261,7 +321,13 @@ float sdShape(vec3 p, float id){
   if(id < 20.5) return sdShell(p);
   if(id < 21.5) return sdJelly(p);
   if(id < 22.5) return sdKnot(p);
-  return sdCage(p);
+  if(id < 23.5) return sdCage(p);
+  if(id < 24.5) return sdXenoPod(p);
+  if(id < 25.5) return sdTendrils(p);
+  if(id < 26.5) return sdCarapace(p);
+  if(id < 27.5) return sdSpore(p);
+  if(id < 28.5) return sdMembrane(p);
+  return sdHive(p);
 }
 `;
 
