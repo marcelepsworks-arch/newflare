@@ -35,5 +35,30 @@
   </div>
 
   <script type="module" src="src/main.js"></script>
+  <script>
+    // Opening index.html directly (file://) blocks ES modules on CORS grounds, so main.js
+    // never runs and every control silently does nothing. Say so instead of looking dead.
+    (function(){
+      var box = document.getElementById('errorOverlay');
+      function fail(msg){ box.style.display = 'block'; box.innerHTML = msg; }
+
+      if(location.protocol === 'file:'){
+        fail('<strong>Cal obrir l\'app des d\'un servidor local.</strong><br><br>' +
+             'Obrint el fitxer directament (file://) el navegador bloqueja els mòduls ES i cap control funciona.<br><br>' +
+             'Al terminal, dins la carpeta del projecte:<br>' +
+             '<code>node server.js</code><br>' +
+             'i després obre <code>http://localhost:3000</code>');
+        return;
+      }
+      // served over http but the module still never booted: report it rather than hang
+      setTimeout(function(){
+        if(!window.__NEWFLARE && box.style.display !== 'block'){
+          fail('<strong>El mòdul principal no ha arrencat.</strong><br><br>' +
+               'Obre la consola del navegador (F12) per veure l\'error. ' +
+               'Si has editat el codi, potser hi ha un error de sintaxi a <code>src/</code>.');
+        }
+      }, 4000);
+    })();
+  </script>
 </body>
 </html>
